@@ -1,32 +1,48 @@
 'use client';
-import React from 'react';
-import { OrderResponse } from '../types/order';
+import { useEffect, useState } from 'react';
+import { OrderStatus } from '../types/order';
+import { getOrderStatus } from '../services/orderService';
 
 interface OrderResultProps {
+  orderId: string;
+  authToken: string;
   success: boolean;
-  response?: OrderResponse;
-  error?: string;
-  onClose: () => void;
+  errorMessage?: string;
+  onBackToPortfolio: () => void;
 }
 
-export default function OrderResult({ success, response, error, onClose }: OrderResultProps) {
-  const message = success 
-    ? `Заявка успешно выставлена${response?.orderId ? ` (ID: ${response.orderId})` : ''}` 
-    : error || response?.error || 'Произошла ошибка при выставлении заявки';
+export default function OrderResult({ orderId, authToken, success, errorMessage, onBackToPortfolio }: OrderResultProps) {
+  const [status, setStatus] = useState<OrderStatus | null>(null);
+
+  useEffect(() => {
+    if (success && orderId) {
+      // TODO: Add polling for status updates
+      getOrderStatus(orderId, authToken)
+        .then(setStatus)
+        .catch(console.error);
+    }
+  }, [orderId, authToken, success]);
 
   return (
     <div className="p-4 bg-white rounded-lg shadow text-center">
-      <div className={`text-4xl mb-4 ${success ? 'text-green-500' : 'text-red-500'}`}>
-        {success ? '✓' : '✕'}
-      </div>
-      <h2 className="text-lg font-semibold mb-2">
-        {success ? 'Успешно' : 'Ошибка'}
-      </h2>
-      <p className="text-gray-600 mb-4">{message}</p>
-      <button 
-        onClick={onClose} 
-        className="w-full py-2 bg-blue-500 text-white rounded"
-      >
+      {success ? (
+        <>
+          <div className="text-green-500 text-5xl mb-4">✓</div>
+          <h2 className="text-xl font-bold mb-2">Заявка успешно выставлена</h2>
+          <p className="text-gray-600 mb-4">ID заявки: {orderId}</p>
+          {status && (
+            <p className="text-gray-600 mb-4">Статус: {status.status}</p>
+          )}
+        </>
+      ) : (
+        <>
+          <div className="text-red-500 text-5xl mb-4">✗</div>
+          <h2 className="text-xl font-bold mb-2">Ошибка выставления заявки</h2>
+          <p className="text-red-600 mb-4">{errorMessage || 'Неизвестная ошибка'}</p>
+        </>
+      )}
+
+      <button onClick={onBackToPortfolio} className="w-full p-3 bg-blue-500 text-white rounded">
         Вернуться в портфель
       </button>
     </div>
