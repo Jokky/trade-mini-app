@@ -1,12 +1,13 @@
-'use client';
+import React from 'react'
+import ClientHome from '../components/ClientHome'
 
-export default function Home() {
+export default function Page() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-24">
-      <h1 className="text-4xl font-bold">Trade Mini App</h1>
-      <p className="mt-4 text-lg text-gray-600">
-        Welcome to the Telegram Trading Mini App
-      </p>
+    <main className="container mx-auto p-6">
+      <h1 className="text-2xl font-bold text-center">Welcome to Trade Mini App</h1>
+      <p className="text-center text-sm mt-2">Your portfolio and token management</p>
+      {/* ClientHome is a client component that handles token input and portfolio rendering */}
+      <ClientHome />
     </main>
-  );
+  )
 }
