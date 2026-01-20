@@ -1,9 +1,13 @@
 /**
- * WebSocket Portfolio Types for BCS Trading API
- * Reference: https://trade-api.bcs.ru/websocket/portfolio
+ * WebSocket types for BCS Trading API Portfolio
+ * Documentation: https://trade-api.bcs.ru/websocket/portfolio
  */
 
-export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
+export type WebSocketConnectionState = 
+  | 'connecting' 
+  | 'connected' 
+  | 'disconnected' 
+  | 'error';
 
 export interface PortfolioPosition {
   ticker: string;
@@ -18,20 +22,17 @@ export interface PortfolioData {
   totalValue: number;
   cash: number;
   positions: PortfolioPosition[];
-  updatedAt: string;
+  timestamp: number;
 }
 
 export interface WebSocketMessage {
-  type: 'portfolio' | 'heartbeat' | 'error' | 'auth';
+  type: 'portfolio' | 'heartbeat' | 'error' | 'subscribed';
   payload?: PortfolioData | string;
 }
 
 export interface PortfolioWebSocketConfig {
   url: string;
   token: string;
-  onData: (data: PortfolioData) => void;
-  onStateChange: (state: ConnectionState) => void;
-  onError: (error: string) => void;
-  maxReconnectAttempts?: number;
-  httpFallback?: () => Promise<PortfolioData>;
+  reconnectAttempts?: number;
+  reconnectInterval?: number;
 }
