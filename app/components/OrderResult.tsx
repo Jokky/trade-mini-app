@@ -1,39 +1,21 @@
 'use client';
 
 import React from 'react';
-import { CreateOrderResponse } from '../services/orderApi';
+import { OrderResultProps } from '../types/order';
 
-interface OrderResultProps {
-  success: boolean;
-  response?: CreateOrderResponse;
-  error?: string;
-  onClose: () => void;
-}
-
-export default function OrderResult({ success, response, error, onClose }: OrderResultProps) {
+export default function OrderResult({ success, message, orderId, onBackToPortfolio }: OrderResultProps) {
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-lg p-6 w-full max-w-md text-center">
-        {success ? (
-          <>
-            <div className="text-green-500 text-5xl mb-4">✓</div>
-            <h2 className="text-xl font-bold mb-2">Заявка создана</h2>
-            <p className="text-gray-600 mb-4">
-              ID заявки: {response?.originalClientOrderId || response?.orderId}
-            </p>
-          </>
-        ) : (
-          <>
-            <div className="text-red-500 text-5xl mb-4">✗</div>
-            <h2 className="text-xl font-bold mb-2">Ошибка</h2>
-            <p className="text-gray-600 mb-4">{error || 'Не удалось создать заявку'}</p>
-          </>
-        )}
-        
-        <button
-          onClick={onClose}
-          className="w-full bg-blue-500 text-white py-3 rounded font-medium"
-        >
+        <div className={`text-6xl mb-4 ${success ? 'text-green-500' : 'text-red-500'}`}>
+          {success ? '✓' : '✗'}
+        </div>
+        <h2 className="text-xl font-bold mb-2">
+          {success ? 'Заявка выставлена' : 'Ошибка выставления заявки'}
+        </h2>
+        <p className="text-gray-600 mb-2">{message}</p>
+        {orderId && <p className="text-sm text-gray-500 mb-4">ID заявки: {orderId}</p>}
+        <button onClick={onBackToPortfolio} className="w-full py-3 bg-blue-500 text-white rounded hover:bg-blue-600">
           Вернуться в портфель
         </button>
       </div>
