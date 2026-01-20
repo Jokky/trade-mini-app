@@ -1,0 +1,22 @@
+.DS_Store
+.vscode
+.idea
+
+# npm
+node_modules
+npm-debug.log
+
+# env
+.env*
+
+/dist
+/cjs
+.cache
+/todo.txt
+/scripts/check.ts
+
+logs
+
+/coverage
+
+*.log
