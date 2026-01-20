@@ -1,95 +1,130 @@
 'use client';
 
 import React, { useState } from 'react';
-import { createOrder, generateClientOrderId, CreateOrderResponse } from '../services/orderApi';
-import OrderResult from './OrderResult';
-
-export interface Instrument {
-  id: string;
-  name: string;
-  ticker?: string;
-}
+import { createOrder, OrderType, OrderSide, CreateOrderResponse } from '../services/orderApi';
 
 interface OrderFormProps {
-  instrument: Instrument;
+  instrumentId: string;
+  instrumentName: string;
+  instrumentTicker?: string;
   onClose: () => void;
+  onSuccess: (response: CreateOrderResponse) => void;
+  onError: (error: string) => void;
 }
 
-export default function OrderForm({ instrument, onClose }: OrderFormProps) {
-  const [orderType, setOrderType] = useState<'market' | 'limit'>('market');
-  const [quantity, setQuantity] = useState('');
-  const [price, setPrice] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ success: boolean; data?: CreateOrderResponse; error?: string } | null>(null);
+export default function OrderForm({ 
+  instrumentId, 
+  instrumentName, 
+  instrumentTicker,
+  onClose, 
+  onSuccess, 
+  onError 
+}: OrderFormProps) {
+  const [orderType, setOrderType] = useState<OrderType>('market');
+  const [quantity, setQuantity] = useState<string>('');
+  const [price, setPrice] = useState<string>('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const isValid = quantity && parseInt(quantity) > 0 && (orderType === 'market' || (price && parseFloat(price) > 0));
+  const quantityNum = parseInt(quantity, 10);
+  const priceNum = parseFloat(price);
+  
+  const isValid = quantityNum > 0 && Number.isInteger(quantityNum) && 
+    (orderType === 'market' || (orderType === 'limit' && priceNum > 0));
 
-  const handleSubmit = async (side: 'buy' | 'sell') => {
-    if (!isValid) return;
-    setLoading(true);
+  const handleSubmit = async (side: OrderSide) => {
+    if (!isValid || isLoading) return;
+    
+    setIsLoading(true);
     try {
-      const response = await createOrder({
-        clientOrderId: generateClientOrderId(),
-        instrumentId: instrument.id,
+      const response = await createOrder(
+        instrumentId,
         side,
-        type: orderType,
-        quantity: parseInt(quantity),
-        price: orderType === 'limit' ? parseFloat(price) : undefined,
-      });
-      setResult({ success: true, data: response });
-    } catch (error) {
-      setResult({ success: false, error: error instanceof Error ? error.message : 'Неизвестная ошибка' });
+        orderType,
+        quantityNum,
+        orderType === 'limit' ? priceNum : undefined
+      );
+      onSuccess(response);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Ошибка создания заявки');
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
-  if (result) {
-    return <OrderResult success={result.success} orderId={result.data?.orderId} error={result.error} onBack={onClose} />;
-  }
+  const handleQuantityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.replace(/[^0-9]/g, '');
+    setQuantity(val);
+  };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl p-6 w-full max-w-md">
-        <h2 className="text-xl font-bold mb-2">Подача заявки</h2>
-        <p className="text-gray-600 mb-4">{instrument.ticker || instrument.name}</p>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-bold">Подача заявки</h2>
+          <button onClick={onClose} className="text-gray-500 text-2xl">&times;</button>
+        </div>
         
         <div className="mb-4">
+          <p className="font-medium">{instrumentName}</p>
+          {instrumentTicker && <p className="text-gray-500 text-sm">{instrumentTicker}</p>}
+        </div>
+
+        <div className="mb-4">
           <label className="block text-sm font-medium mb-2">Тип заявки</label>
-          <select value={orderType} onChange={(e) => setOrderType(e.target.value as 'market' | 'limit')}
-            className="w-full p-3 border rounded-lg">
+          <select 
+            value={orderType} 
+            onChange={(e) => setOrderType(e.target.value as OrderType)}
+            className="w-full border rounded p-2"
+          >
             <option value="market">Рыночная</option>
             <option value="limit">Лимитная</option>
           </select>
         </div>
 
         <div className="mb-4">
-          <label className="block text-sm font-medium mb-2">Количество (шт)</label>
-          <input type="number" min="1" step="1" value={quantity}
-            onChange={(e) => setQuantity(e.target.value.replace(/[^0-9]/g, ''))}
-            className="w-full p-3 border rounded-lg" placeholder="Введите количество" />
+          <label className="block text-sm font-medium mb-2">Количество (шт.)</label>
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={quantity}
+            onChange={handleQuantityChange}
+            placeholder="Введите количество"
+            className="w-full border rounded p-2"
+          />
         </div>
 
         {orderType === 'limit' && (
           <div className="mb-4">
             <label className="block text-sm font-medium mb-2">Цена</label>
-            <input type="number" min="0.01" step="0.01" value={price}
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={price}
               onChange={(e) => setPrice(e.target.value)}
-              className="w-full p-3 border rounded-lg" placeholder="Введите цену" />
+              placeholder="Введите цену"
+              className="w-full border rounded p-2"
+            />
           </div>
         )}
 
-        <div className="flex gap-3 mt-6">
-          <button onClick={() => handleSubmit('buy')} disabled={!isValid || loading}
-            className="flex-1 bg-green-500 text-white py-3 rounded-lg disabled:opacity-50">
-            {loading ? 'Загрузка...' : 'Купить'}
+        <div className="flex gap-3">
+          <button
+            onClick={() => handleSubmit('buy')}
+            disabled={!isValid || isLoading}
+            className="flex-1 bg-green-500 text-white py-3 rounded font-medium disabled:bg-gray-300"
+          >
+            {isLoading ? 'Загрузка...' : 'Купить'}
           </button>
-          <button onClick={() => handleSubmit('sell')} disabled={!isValid || loading}
-            className="flex-1 bg-red-500 text-white py-3 rounded-lg disabled:opacity-50">
-            {loading ? 'Загрузка...' : 'Продать'}
+          <button
+            onClick={() => handleSubmit('sell')}
+            disabled={!isValid || isLoading}
+            className="flex-1 bg-red-500 text-white py-3 rounded font-medium disabled:bg-gray-300"
+          >
+            {isLoading ? 'Загрузка...' : 'Продать'}
           </button>
         </div>
-        <button onClick={onClose} className="w-full mt-3 py-2 text-gray-600">Отмена</button>
       </div>
     </div>
   );
