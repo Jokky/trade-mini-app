@@ -1,151 +1,87 @@
 'use client';
-import React, { useState } from 'react';
-import { createOrder, generateClientOrderId, CreateOrderResponse } from '../services/orderApi';
 
-/** Интерфейс позиции портфеля - соответствует существующему PortfolioPosition */
-export interface PortfolioPosition {
-  ticker: string;
-  name: string;
-  quantity: number;
-  totalValue: number;
-  profitLoss: number;
-  profitLossPercent: number;
-  instrumentId?: string;
-}
+/**
+ * OrderForm Component - Order submission form
+ * Issue #15: Добавить форму подачи заявки по инструменту
+ */
+
+import React, { useState } from 'react';
+import { OrderDirection, OrderType, Instrument } from '../types/order';
+import { createOrder, generateClientOrderId } from '../services/orderService';
 
 interface OrderFormProps {
-  position: PortfolioPosition;
+  instrument: Instrument;
+  authToken: string;
+  onSuccess: (clientOrderId: string) => void;
+  onError: (message: string) => void;
   onClose: () => void;
-  onSuccess?: (response: CreateOrderResponse) => void;
 }
 
-export default function OrderForm({ position, onClose, onSuccess }: OrderFormProps) {
-  const [orderType, setOrderType] = useState<'market' | 'limit'>('market');
-  const [quantity, setQuantity] = useState('');
-  const [price, setPrice] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<CreateOrderResponse | null>(null);
+export default function OrderForm({ instrument, authToken, onSuccess, onError, onClose }: OrderFormProps) {
+  const [orderType, setOrderType] = useState<OrderType>('market');
+  const [quantity, setQuantity] = useState<string>('');
+  const [price, setPrice] = useState<string>('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const isValid = () => {
-    const qty = parseInt(quantity, 10);
-    if (!qty || qty <= 0 || !Number.isInteger(qty)) return false;
-    if (orderType === 'limit') {
-      const p = parseFloat(price);
-      if (!p || p <= 0) return false;
+  const quantityNum = parseInt(quantity, 10);
+  const priceNum = parseFloat(price);
+  const isQuantityValid = !isNaN(quantityNum) && quantityNum > 0 && Number.isInteger(quantityNum);
+  const isPriceValid = orderType === 'market' || (!isNaN(priceNum) && priceNum > 0);
+  const isFormValid = isQuantityValid && isPriceValid;
+
+  const handleSubmit = async (direction: OrderDirection) => {
+    if (!isFormValid || isLoading) return;
+    setIsLoading(true);
+
+    try {
+      const clientOrderId = generateClientOrderId();
+      await createOrder({
+        board: instrument.board,
+        symbol: instrument.symbol,
+        direction,
+        quantity: quantityNum,
+        orderType,
+        price: orderType === 'limit' ? priceNum : undefined,
+        clientOrderId,
+      }, authToken);
+      onSuccess(clientOrderId);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Неизвестная ошибка');
+    } finally {
+      setIsLoading(false);
     }
-    return true;
   };
 
-  const handleSubmit = async (side: 'buy' | 'sell') => {
-    if (!isValid()) return;
-    setLoading(true);
-    
-    const response = await createOrder({
-      clientOrderId: generateClientOrderId(),
-      instrumentId: position.instrumentId || position.ticker,
-      side,
-      type: orderType,
-      quantity: parseInt(quantity, 10),
-      price: orderType === 'limit' ? parseFloat(price) : undefined
-    });
-    
-    setLoading(false);
-    setResult(response);
-    if (response.success && onSuccess) onSuccess(response);
-  };
+  return (
+    <div className="p-4 bg-white rounded-lg shadow-lg max-w-md mx-auto">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-xl font-bold">{instrument.symbol}</h2>
+        <button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
+      </div>
 
-  // Экран результата
-  if (result) {
-    return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-xl p-6 w-full max-w-sm text-center">
-          {result.success ? (
-            <>
-              <div className="text-green-500 text-5xl mb-4">✓</div>
-              <h2 className="text-xl font-bold mb-2">Заявка отправлена</h2>
-              <p className="text-gray-600 mb-4">ID: {result.originalClientOrderId}</p>
-            </>
-          ) : (
-            <>
-              <div className="text-red-500 text-5xl mb-4">✗</div>
-              <h2 className="text-xl font-bold mb-2">Ошибка</h2>
-              <p className="text-gray-600 mb-4">{result.error}</p>
-            </>
-          )}
-          <button onClick={onClose} className="w-full py-3 bg-blue-500 text-white rounded-lg">
-            Вернуться в портфель
-          </button>
+      <div className="mb-4">
+        <label className="block text-sm font-medium mb-2">Тип заявки</label>
+        <div className="flex gap-2">
+          <button onClick={() => setOrderType('market')} className={`flex-1 py-2 px-4 rounded ${orderType === 'market' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>Рыночная</button>
+          <button onClick={() => setOrderType('limit')} className={`flex-1 py-2 px-4 rounded ${orderType === 'limit' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>Лимитная</button>
         </div>
       </div>
-    );
-  }
 
-  // Форма заявки
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl p-6 w-full max-w-sm">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold">{position.ticker}</h2>
-          <button onClick={onClose} className="text-gray-400 text-2xl">&times;</button>
-        </div>
-        <p className="text-gray-600 mb-4">{position.name}</p>
+      <div className="mb-4">
+        <label className="block text-sm font-medium mb-2">Количество (шт.)</label>
+        <input type="number" min="1" step="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} className="w-full p-2 border rounded" placeholder="Введите количество" />
+      </div>
 
+      {orderType === 'limit' && (
         <div className="mb-4">
-          <label className="block text-sm font-medium mb-2">Тип заявки</label>
-          <select 
-            value={orderType} 
-            onChange={(e) => setOrderType(e.target.value as 'market' | 'limit')}
-            className="w-full p-3 border rounded-lg"
-          >
-            <option value="market">Рыночная</option>
-            <option value="limit">Лимитная</option>
-          </select>
+          <label className="block text-sm font-medium mb-2">Цена</label>
+          <input type="number" min="0.01" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} className="w-full p-2 border rounded" placeholder="Введите цену" />
         </div>
+      )}
 
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-2">Количество, шт.</label>
-          <input
-            type="number"
-            min="1"
-            step="1"
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.value.replace(/[^0-9]/g, ''))}
-            className="w-full p-3 border rounded-lg"
-            placeholder="Введите количество"
-          />
-        </div>
-
-        {orderType === 'limit' && (
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-2">Цена</label>
-            <input
-              type="number"
-              min="0.01"
-              step="0.01"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              className="w-full p-3 border rounded-lg"
-              placeholder="Введите цену"
-            />
-          </div>
-        )}
-
-        <div className="flex gap-3">
-          <button
-            onClick={() => handleSubmit('buy')}
-            disabled={!isValid() || loading}
-            className="flex-1 py-3 bg-green-500 text-white rounded-lg disabled:opacity-50"
-          >
-            {loading ? '...' : 'Купить'}
-          </button>
-          <button
-            onClick={() => handleSubmit('sell')}
-            disabled={!isValid() || loading}
-            className="flex-1 py-3 bg-red-500 text-white rounded-lg disabled:opacity-50"
-          >
-            {loading ? '...' : 'Продать'}
-          </button>
-        </div>
+      <div className="flex gap-2">
+        <button onClick={() => handleSubmit('buy')} disabled={!isFormValid || isLoading} className="flex-1 py-3 bg-green-500 text-white rounded disabled:opacity-50">{isLoading ? 'Загрузка...' : 'Купить'}</button>
+        <button onClick={() => handleSubmit('sell')} disabled={!isFormValid || isLoading} className="flex-1 py-3 bg-red-500 text-white rounded disabled:opacity-50">{isLoading ? 'Загрузка...' : 'Продать'}</button>
       </div>
     </div>
   );
