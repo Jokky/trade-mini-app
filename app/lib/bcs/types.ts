@@ -1,50 +1,59 @@
 /**
  * БКС Trade API Types
- * Документация: https://trade-api.bcs.ru/http/portfolio
+ * Типы для интеграции с БКС Брокер Trade API
  */
 
+// Auth configuration
+export interface BcsAuthConfig {
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+  scope: string;
+}
+
+// Token response from OAuth
 export interface BcsTokens {
   accessToken: string;
   refreshToken: string;
-  expiresAt: number;
+  expiresIn: number;
+  tokenType: string;
 }
 
-export interface BcsAuthConfig {
-  clientId: string;
-  redirectUri: string;
-  authUrl: string;
-  tokenUrl: string;
-}
-
+// Portfolio position
 export interface BcsPosition {
   ticker: string;
   name: string;
   quantity: number;
   avgPrice: number;
   currentPrice: number;
+  value: number;
   pnl: number;
   pnlPercent: number;
-  value: number;
+  currency: string;
 }
 
+// Full portfolio data
 export interface BcsPortfolio {
   accountId: string;
   positions: BcsPosition[];
   totalValue: number;
+  totalCost: number;
   totalPnl: number;
   totalPnlPercent: number;
+  currency: string;
   updatedAt: string;
 }
 
+// API error response
 export interface BcsApiError {
-  code: number;
+  code: string;
   message: string;
-  isRateLimited: boolean;
-  retryAfter?: number;
+  status: number;
 }
 
-export type BcsAuthState = 
-  | { status: 'idle' }
-  | { status: 'loading' }
-  | { status: 'authenticated'; tokens: BcsTokens }
-  | { status: 'error'; error: string };
+// Session stored on server
+export interface BcsSession {
+  userId: string;
+  tokens: BcsTokens;
+  expiresAt: number;
+}
