@@ -1,67 +1,109 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
-import { BcsClient } from '../lib/bcs/bcs-client';
-import { BcsPortfolio, AuthStatus } from '../lib/bcs/types';
+import { useState, useCallback } from 'react';
+import { BcsPortfolio, BcsAuthState } from '@/app/lib/bcs/types';
 
-const client = new BcsClient({ clientId: process.env.NEXT_PUBLIC_BCS_CLIENT_ID || '', redirectUri: process.env.NEXT_PUBLIC_BCS_REDIRECT_URI || '', scope: 'portfolio' });
+const CLIENT_ID = process.env.NEXT_PUBLIC_BCS_CLIENT_ID || '';
+const REDIRECT_URI = process.env.NEXT_PUBLIC_BCS_REDIRECT_URI || '';
+const AUTH_URL = 'https://oauth.bcs.ru/authorize';
 
 export default function BcsPortfolioComponent() {
-  const [status, setStatus] = useState<AuthStatus>('idle');
+  const [authState, setAuthState] = useState<BcsAuthState>({ status: 'idle' });
   const [portfolio, setPortfolio] = useState<BcsPortfolio | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const loadPortfolio = useCallback(async () => {
-    setStatus('loading'); setError(null);
+  const initiateAuth = useCallback(() => {
+    const state = crypto.randomUUID();
+    sessionStorage.setItem('bcs_oauth_state', state);
+    const authUrl = `${AUTH_URL}?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&state=${state}`;
+    window.location.href = authUrl;
+  }, []);
+
+  const handleCallback = useCallback(async (code: string, state: string) => {
+    const savedState = sessionStorage.getItem('bcs_oauth_state');
+    setIsLoading(true);
     try {
-      const data = await client.getPortfolio('default');
-      setPortfolio(data); setStatus('authenticated');
-    } catch (e: any) {
-      setError(e.message); setStatus('error');
-      const cached = client.getCachedPortfolio();
-      if (cached) setPortfolio(cached);
+      const res = await fetch('/api/bcs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'exchange', code, state, savedState })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Auth failed');
+      }
+      const tokens = await res.json();
+      setAuthState({ status: 'authenticated', tokens });
+      sessionStorage.removeItem('bcs_oauth_state');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Ошибка авторизации');
+      setAuthState({ status: 'error', error: 'Auth failed' });
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('code');
-    if (code) {
-      client.exchangeCode(code).then(() => { window.history.replaceState({}, '', window.location.pathname); loadPortfolio(); }).catch(e => setError(e.message));
-    } else if (client.isAuthenticated()) {
-      loadPortfolio();
+  const fetchPortfolio = useCallback(async () => {
+    if (authState.status !== 'authenticated') return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/bcs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'portfolio', accessToken: authState.tokens.accessToken })
+      });
+      if (res.status === 429) {
+        setError('Превышен лимит запросов. Попробуйте позже.');
+        return;
+      }
+      if (!res.ok) throw new Error('Failed to fetch portfolio');
+      setPortfolio(await res.json());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Ошибка загрузки портфеля');
+    } finally {
+      setIsLoading(false);
     }
-  }, [loadPortfolio]);
+  }, [authState]);
 
-  const handleLogin = () => { const state = Math.random().toString(36).slice(2); sessionStorage.setItem('bcs_state', state); window.location.href = client.getAuthUrl(state); };
-  const handleLogout = () => { client.clearTokens(); setPortfolio(null); setStatus('idle'); };
-
-  if (!client.isAuthenticated() && status !== 'loading') {
-    return <div className="p-4 text-center"><h2 className="text-xl mb-4">Портфель БКС</h2><button onClick={handleLogin} className="bg-blue-600 text-white px-6 py-2 rounded">Войти через БКС</button>{error && <p className="text-red-500 mt-2">{error}</p>}</div>;
+  if (authState.status !== 'authenticated') {
+    return (
+      <div className="p-4">
+        <button onClick={initiateAuth} className="bg-blue-600 text-white px-4 py-2 rounded" disabled={isLoading}>
+          {isLoading ? 'Загрузка...' : 'Войти через БКС'}
+        </button>
+        {error && <p className="text-red-500 mt-2">{error}</p>}
+      </div>
+    );
   }
 
   return (
     <div className="p-4">
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-bold">Портфель</h2>
-        <div><button onClick={loadPortfolio} disabled={status === 'loading'} className="mr-2 px-3 py-1 bg-gray-200 rounded">{status === 'loading' ? '...' : '↻'}</button><button onClick={handleLogout} className="px-3 py-1 bg-red-100 rounded">Выйти</button></div>
+        <h2 className="text-xl font-bold">Портфель БКС</h2>
+        <button onClick={fetchPortfolio} className="bg-gray-200 px-3 py-1 rounded" disabled={isLoading}>
+          {isLoading ? '...' : 'Обновить'}
+        </button>
       </div>
-      {error && <div className="bg-red-50 p-2 mb-4 rounded text-red-700">{error}<button onClick={handleLogin} className="ml-2 underline">Повторить вход</button></div>}
+      {error && <p className="text-red-500 mb-2">{error}</p>}
       {portfolio && (
-        <>
-          <div className="bg-gray-50 p-4 rounded mb-4">
-            <div className="text-2xl font-bold">{portfolio.totalValue.toLocaleString('ru')} {portfolio.currency}</div>
-            <div className={portfolio.totalProfit >= 0 ? 'text-green-600' : 'text-red-600'}>{portfolio.totalProfit >= 0 ? '+' : ''}{portfolio.totalProfit.toLocaleString('ru')} ({portfolio.totalProfitPercent.toFixed(2)}%)</div>
-            <div className="text-xs text-gray-500">Обновлено: {new Date(portfolio.updatedAt).toLocaleString('ru')}</div>
+        <div>
+          <div className="mb-4 p-3 bg-gray-100 rounded">
+            <p>Общая стоимость: <b>{portfolio.totalValue.toLocaleString('ru-RU')} ₽</b></p>
+            <p className={portfolio.totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}>
+              P&L: {portfolio.totalPnl >= 0 ? '+' : ''}{portfolio.totalPnl.toLocaleString('ru-RU')} ₽ ({portfolio.totalPnlPercent.toFixed(2)}%)
+            </p>
           </div>
-          <div className="space-y-2">
-            {portfolio.positions.map(p => (
-              <div key={p.ticker} className="border p-3 rounded flex justify-between">
-                <div><div className="font-medium">{p.ticker}</div><div className="text-sm text-gray-600">{p.name}</div><div className="text-xs">{p.quantity} шт × {p.currentPrice.toLocaleString('ru')}</div></div>
-                <div className="text-right"><div className="font-medium">{p.value.toLocaleString('ru')}</div><div className={p.profit >= 0 ? 'text-green-600 text-sm' : 'text-red-600 text-sm'}>{p.profit >= 0 ? '+' : ''}{p.profit.toLocaleString('ru')} ({p.profitPercent.toFixed(2)}%)</div></div>
+          {portfolio.positions.map(pos => (
+            <div key={pos.ticker} className="border-b py-2">
+              <div className="flex justify-between"><span className="font-medium">{pos.ticker}</span><span>{pos.value.toLocaleString('ru-RU')} ₽</span></div>
+              <div className="text-sm text-gray-600">{pos.name} • {pos.quantity} шт.</div>
+              <div className={`text-sm ${pos.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {pos.pnl >= 0 ? '+' : ''}{pos.pnl.toLocaleString('ru-RU')} ₽ ({pos.pnlPercent.toFixed(2)}%)
               </div>
-            ))}
-          </div>
-        </>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
