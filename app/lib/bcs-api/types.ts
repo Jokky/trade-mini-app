@@ -1,61 +1,45 @@
 /**
  * BCS Trade API Types
  * Documentation: https://trade-api.bcs.ru/http/authorization
- * Portfolio: https://trade-api.bcs.ru/http/portfolio
  */
 
-// OAuth2 Token Response
-export interface BCSTokenResponse {
-  access_token: string;
-  refresh_token: string;
-  token_type: string;
-  expires_in: number; // seconds until expiration
-  scope?: string;
-}
-
-// Stored token with metadata
-export interface BCSStoredToken {
+export interface BCSAuthTokens {
   accessToken: string;
   refreshToken: string;
-  expiresAt: number; // timestamp in ms
+  expiresAt: number;
 }
 
-// Portfolio Position
-export interface BCSPosition {
+export interface BCSPortfolioPosition {
   ticker: string;
   name: string;
   quantity: number;
-  currentPrice: number;
   averagePrice: number;
+  currentPrice: number;
   currentValue: number;
-  pnl: number; // profit and loss
-  pnlPercent: number;
+  profitLoss: number;
+  profitLossPercent: number;
   currency: string;
 }
 
-// Portfolio Summary
 export interface BCSPortfolio {
   accountId: string;
-  positions: BCSPosition[];
   totalValue: number;
-  totalPnl: number;
-  totalPnlPercent: number;
+  totalProfitLoss: number;
+  totalProfitLossPercent: number;
+  positions: BCSPortfolioPosition[];
   currency: string;
-  updatedAt: number;
+  updatedAt: Date;
 }
 
-// API Error Response
 export interface BCSApiError {
-  code: number;
+  code: string;
   message: string;
   details?: string;
 }
 
-// API Configuration
 export interface BCSApiConfig {
+  baseUrl: string;
   clientId: string;
   clientSecret: string;
   redirectUri: string;
-  baseUrl: string;
-  authUrl: string;
 }
