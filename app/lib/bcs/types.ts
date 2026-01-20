@@ -1,45 +1,45 @@
 /**
- * БКС Trade API Types
- * Документация: https://trade-api.bcs.ru
+ * BCS Trade API Types
+ * Documentation: https://trade-api.bcs.ru
  */
 
-export interface BcsTokens {
+export interface BCSTokens {
   accessToken: string;
   refreshToken: string;
   expiresAt: number;
 }
 
-export interface BcsPosition {
+export interface BCSPosition {
   ticker: string;
   name: string;
   quantity: number;
   avgPrice: number;
   currentPrice: number;
   value: number;
-  profit: number;
-  profitPercent: number;
+  pnl: number;
+  pnlPercent: number;
   currency: string;
 }
 
-export interface BcsPortfolio {
+export interface BCSPortfolio {
   accountId: string;
   totalValue: number;
-  totalProfit: number;
-  totalProfitPercent: number;
-  positions: BcsPosition[];
-  updatedAt: string;
+  totalPnl: number;
+  totalPnlPercent: number;
   currency: string;
+  positions: BCSPosition[];
+  updatedAt: Date;
 }
 
-export interface BcsAuthConfig {
+export interface BCSAuthConfig {
   clientId: string;
+  clientSecret: string;
   redirectUri: string;
-  scope: string;
+  baseUrl: string;
 }
 
-export interface BcsApiError {
-  code: string;
+export interface BCSApiError {
+  code: number;
   message: string;
+  retryAfter?: number;
 }
-
-export type AuthStatus = 'idle' | 'loading' | 'authenticated' | 'error';
