@@ -1,82 +1,91 @@
 'use client';
-import React, { useState } from 'react';
-import { createOrder, generateClientOrderId } from '../services/orderService';
-import { OrderDirection, OrderType, OrderResponse } from '../types/order';
+import { useState } from 'react';
+import { OrderDirection, OrderType, OrderRequest, InstrumentInfo } from '../types/order';
+import { createOrder, generateClientOrderId, validateOrderRequest } from '../services/orderService';
 
 interface OrderFormProps {
-  instrumentId: string;
-  instrumentName: string;
-  instrumentTicker: string;
-  board?: string;
-  availableQuantity?: number;
-  onSuccess: (response: OrderResponse) => void;
+  instrument: InstrumentInfo;
+  authToken: string;
+  onSuccess: (orderId: string) => void;
   onError: (error: string) => void;
   onClose: () => void;
 }
 
-export default function OrderForm(props: OrderFormProps) {
-  const { instrumentName, instrumentTicker, board = 'TQBR', availableQuantity = 0, onSuccess, onError, onClose } = props;
-  
+export default function OrderForm({ instrument, authToken, onSuccess, onError, onClose }: OrderFormProps) {
   const [orderType, setOrderType] = useState<OrderType>('market');
-  const [quantity, setQuantity] = useState('');
-  const [price, setPrice] = useState('');
+  const [quantity, setQuantity] = useState<string>('');
+  const [price, setPrice] = useState<string>('');
   const [loading, setLoading] = useState(false);
 
-  const quantityNum = parseInt(quantity, 10) || 0;
-  const priceNum = parseFloat(price) || 0;
-  const isQuantityValid = quantityNum > 0 && quantityNum <= (availableQuantity || Infinity);
-  const isPriceValid = orderType === 'market' || priceNum > 0;
-  const isFormValid = isQuantityValid && isPriceValid;
+  const isValid = () => {
+    const qty = parseInt(quantity, 10);
+    if (!qty || qty <= 0) return false;
+    if (orderType === 'limit' && (!price || parseFloat(price) <= 0)) return false;
+    return true;
+  };
 
   const handleSubmit = async (direction: OrderDirection) => {
-    if (!isFormValid) return;
-    setLoading(true);
-    
-    const response = await createOrder({
-      board,
-      symbol: instrumentTicker,
+    const request: OrderRequest = {
+      board: instrument.board,
+      symbol: instrument.symbol,
       direction,
-      quantity: quantityNum,
+      quantity: parseInt(quantity, 10),
       orderType,
-      price: orderType === 'limit' ? priceNum : undefined,
       clientOrderId: generateClientOrderId(),
-    });
-    
-    setLoading(false);
-    response.success ? onSuccess(response) : onError(response.error || 'Ошибка');
+      ...(orderType === 'limit' && { price: parseFloat(price) }),
+    };
+
+    const errors = validateOrderRequest(request);
+    if (errors.length > 0) {
+      onError(errors.join(', '));
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await createOrder(request, authToken);
+      onSuccess(response.originalClientOrderId);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="p-4 bg-white rounded-lg shadow">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-semibold">{instrumentName} ({instrumentTicker})</h2>
-        <button onClick={onClose} className="text-gray-500">✕</button>
-      </div>
+      <h2 className="text-xl font-bold mb-4">{instrument.name} ({instrument.symbol})</h2>
       
       <div className="mb-4">
-        <label className="block text-sm mb-2">Тип заявки</label>
-        <div className="flex gap-2">
-          <button onClick={() => setOrderType('market')} className={`px-4 py-2 rounded ${orderType === 'market' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>Рыночная</button>
-          <button onClick={() => setOrderType('limit')} className={`px-4 py-2 rounded ${orderType === 'limit' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>Лимитная</button>
-        </div>
+        <label className="block mb-2">Тип заявки</label>
+        <select value={orderType} onChange={(e) => setOrderType(e.target.value as OrderType)} className="w-full p-2 border rounded">
+          <option value="market">Рыночная</option>
+          <option value="limit">Лимитная</option>
+        </select>
       </div>
-      
+
       <div className="mb-4">
-        <label className="block text-sm mb-2">Количество (шт.){availableQuantity > 0 && ` — доступно: ${availableQuantity}`}</label>
-        <input type="number" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} className="w-full p-2 border rounded" placeholder="Введите количество" />
+        <label className="block mb-2">Количество (шт.)</label>
+        <input type="number" min="1" step="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} className="w-full p-2 border rounded" placeholder="Введите количество" />
       </div>
-      
+
       {orderType === 'limit' && (
         <div className="mb-4">
-          <label className="block text-sm mb-2">Цена</label>
+          <label className="block mb-2">Цена</label>
           <input type="number" min="0.01" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} className="w-full p-2 border rounded" placeholder="Введите цену" />
         </div>
       )}
-      
+
       <div className="flex gap-2">
-        <button onClick={() => handleSubmit('buy')} disabled={!isFormValid || loading} className="flex-1 py-2 bg-green-500 text-white rounded disabled:opacity-50">{loading ? 'Загрузка...' : 'Купить'}</button>
-        <button onClick={() => handleSubmit('sell')} disabled={!isFormValid || loading} className="flex-1 py-2 bg-red-500 text-white rounded disabled:opacity-50">{loading ? 'Загрузка...' : 'Продать'}</button>
+        <button onClick={() => handleSubmit('buy')} disabled={!isValid() || loading} className="flex-1 p-3 bg-green-500 text-white rounded disabled:opacity-50">
+          {loading ? 'Загрузка...' : 'Купить'}
+        </button>
+        <button onClick={() => handleSubmit('sell')} disabled={!isValid() || loading} className="flex-1 p-3 bg-red-500 text-white rounded disabled:opacity-50">
+          {loading ? 'Загрузка...' : 'Продать'}
+        </button>
       </div>
+
+      <button onClick={onClose} className="w-full mt-2 p-2 border rounded">Отмена</button>
     </div>
   );
 }
