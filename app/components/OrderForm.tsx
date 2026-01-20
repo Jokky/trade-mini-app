@@ -1,80 +1,101 @@
 'use client';
-
 import React, { useState } from 'react';
-import { createOrder, OrderType, OrderSide, CreateOrderResponse } from '../services/orderApi';
+import { createOrder, generateClientOrderId, CreateOrderResponse } from '../services/orderApi';
 
-interface OrderFormProps {
-  instrumentId: string;
-  instrumentName: string;
-  instrumentTicker?: string;
-  onClose: () => void;
-  onSuccess: (response: CreateOrderResponse) => void;
-  onError: (error: string) => void;
+/** Интерфейс позиции портфеля - соответствует существующему PortfolioPosition */
+export interface PortfolioPosition {
+  ticker: string;
+  name: string;
+  quantity: number;
+  totalValue: number;
+  profitLoss: number;
+  profitLossPercent: number;
+  instrumentId?: string;
 }
 
-export default function OrderForm({ 
-  instrumentId, 
-  instrumentName, 
-  instrumentTicker,
-  onClose, 
-  onSuccess, 
-  onError 
-}: OrderFormProps) {
-  const [orderType, setOrderType] = useState<OrderType>('market');
-  const [quantity, setQuantity] = useState<string>('');
-  const [price, setPrice] = useState<string>('');
-  const [isLoading, setIsLoading] = useState(false);
+interface OrderFormProps {
+  position: PortfolioPosition;
+  onClose: () => void;
+  onSuccess?: (response: CreateOrderResponse) => void;
+}
 
-  const quantityNum = parseInt(quantity, 10);
-  const priceNum = parseFloat(price);
-  
-  const isValid = quantityNum > 0 && Number.isInteger(quantityNum) && 
-    (orderType === 'market' || (orderType === 'limit' && priceNum > 0));
+export default function OrderForm({ position, onClose, onSuccess }: OrderFormProps) {
+  const [orderType, setOrderType] = useState<'market' | 'limit'>('market');
+  const [quantity, setQuantity] = useState('');
+  const [price, setPrice] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<CreateOrderResponse | null>(null);
 
-  const handleSubmit = async (side: OrderSide) => {
-    if (!isValid || isLoading) return;
-    
-    setIsLoading(true);
-    try {
-      const response = await createOrder(
-        instrumentId,
-        side,
-        orderType,
-        quantityNum,
-        orderType === 'limit' ? priceNum : undefined
-      );
-      onSuccess(response);
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'Ошибка создания заявки');
-    } finally {
-      setIsLoading(false);
+  const isValid = () => {
+    const qty = parseInt(quantity, 10);
+    if (!qty || qty <= 0 || !Number.isInteger(qty)) return false;
+    if (orderType === 'limit') {
+      const p = parseFloat(price);
+      if (!p || p <= 0) return false;
     }
+    return true;
   };
 
-  const handleQuantityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value.replace(/[^0-9]/g, '');
-    setQuantity(val);
+  const handleSubmit = async (side: 'buy' | 'sell') => {
+    if (!isValid()) return;
+    setLoading(true);
+    
+    const response = await createOrder({
+      clientOrderId: generateClientOrderId(),
+      instrumentId: position.instrumentId || position.ticker,
+      side,
+      type: orderType,
+      quantity: parseInt(quantity, 10),
+      price: orderType === 'limit' ? parseFloat(price) : undefined
+    });
+    
+    setLoading(false);
+    setResult(response);
+    if (response.success && onSuccess) onSuccess(response);
   };
 
+  // Экран результата
+  if (result) {
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div className="bg-white rounded-xl p-6 w-full max-w-sm text-center">
+          {result.success ? (
+            <>
+              <div className="text-green-500 text-5xl mb-4">✓</div>
+              <h2 className="text-xl font-bold mb-2">Заявка отправлена</h2>
+              <p className="text-gray-600 mb-4">ID: {result.originalClientOrderId}</p>
+            </>
+          ) : (
+            <>
+              <div className="text-red-500 text-5xl mb-4">✗</div>
+              <h2 className="text-xl font-bold mb-2">Ошибка</h2>
+              <p className="text-gray-600 mb-4">{result.error}</p>
+            </>
+          )}
+          <button onClick={onClose} className="w-full py-3 bg-blue-500 text-white rounded-lg">
+            Вернуться в портфель
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Форма заявки
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-xl p-6 w-full max-w-sm">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold">Подача заявки</h2>
-          <button onClick={onClose} className="text-gray-500 text-2xl">&times;</button>
+          <h2 className="text-xl font-bold">{position.ticker}</h2>
+          <button onClick={onClose} className="text-gray-400 text-2xl">&times;</button>
         </div>
-        
-        <div className="mb-4">
-          <p className="font-medium">{instrumentName}</p>
-          {instrumentTicker && <p className="text-gray-500 text-sm">{instrumentTicker}</p>}
-        </div>
+        <p className="text-gray-600 mb-4">{position.name}</p>
 
         <div className="mb-4">
           <label className="block text-sm font-medium mb-2">Тип заявки</label>
           <select 
             value={orderType} 
-            onChange={(e) => setOrderType(e.target.value as OrderType)}
-            className="w-full border rounded p-2"
+            onChange={(e) => setOrderType(e.target.value as 'market' | 'limit')}
+            className="w-full p-3 border rounded-lg"
           >
             <option value="market">Рыночная</option>
             <option value="limit">Лимитная</option>
@@ -82,15 +103,15 @@ export default function OrderForm({
         </div>
 
         <div className="mb-4">
-          <label className="block text-sm font-medium mb-2">Количество (шт.)</label>
+          <label className="block text-sm font-medium mb-2">Количество, шт.</label>
           <input
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
+            type="number"
+            min="1"
+            step="1"
             value={quantity}
-            onChange={handleQuantityChange}
+            onChange={(e) => setQuantity(e.target.value.replace(/[^0-9]/g, ''))}
+            className="w-full p-3 border rounded-lg"
             placeholder="Введите количество"
-            className="w-full border rounded p-2"
           />
         </div>
 
@@ -99,12 +120,12 @@ export default function OrderForm({
             <label className="block text-sm font-medium mb-2">Цена</label>
             <input
               type="number"
+              min="0.01"
               step="0.01"
-              min="0"
               value={price}
               onChange={(e) => setPrice(e.target.value)}
+              className="w-full p-3 border rounded-lg"
               placeholder="Введите цену"
-              className="w-full border rounded p-2"
             />
           </div>
         )}
@@ -112,17 +133,17 @@ export default function OrderForm({
         <div className="flex gap-3">
           <button
             onClick={() => handleSubmit('buy')}
-            disabled={!isValid || isLoading}
-            className="flex-1 bg-green-500 text-white py-3 rounded font-medium disabled:bg-gray-300"
+            disabled={!isValid() || loading}
+            className="flex-1 py-3 bg-green-500 text-white rounded-lg disabled:opacity-50"
           >
-            {isLoading ? 'Загрузка...' : 'Купить'}
+            {loading ? '...' : 'Купить'}
           </button>
           <button
             onClick={() => handleSubmit('sell')}
-            disabled={!isValid || isLoading}
-            className="flex-1 bg-red-500 text-white py-3 rounded font-medium disabled:bg-gray-300"
+            disabled={!isValid() || loading}
+            className="flex-1 py-3 bg-red-500 text-white rounded-lg disabled:opacity-50"
           >
-            {isLoading ? 'Загрузка...' : 'Продать'}
+            {loading ? '...' : 'Продать'}
           </button>
         </div>
       </div>
