@@ -1,77 +1,94 @@
 /**
  * Order API Service for BCS Trade API
- * Handles order creation and status checking
+ * Handles order creation and status checking via /api/bcs proxy
  */
+
+import { v4 as uuidv4 } from 'uuid';
+
+export type OrderType = 'market' | 'limit';
+export type OrderSide = 'buy' | 'sell';
 
 export interface CreateOrderRequest {
   clientOrderId: string;
   instrumentId: string;
-  side: 'buy' | 'sell';
-  type: 'market' | 'limit';
+  side: OrderSide;
+  type: OrderType;
   quantity: number;
   price?: number;
 }
 
 export interface CreateOrderResponse {
   originalClientOrderId: string;
-  orderId: string;
+  orderId?: string;
   status: string;
+  message?: string;
 }
 
 export interface OrderStatusResponse {
   orderId: string;
   status: 'pending' | 'filled' | 'rejected' | 'cancelled';
+  filledQuantity?: number;
   message?: string;
 }
 
-const API_BASE = 'https://be.broker.ru/trade-api-bff-operations/api/v1';
-
-/** Generate unique client order ID */
-export function generateClientOrderId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-}
-
-/** Get auth token from Telegram WebApp */
-function getAuthToken(): string {
-  // Access Telegram WebApp initData for authentication
-  if (typeof window !== 'undefined' && (window as any).Telegram?.WebApp?.initData) {
-    return (window as any).Telegram.WebApp.initData;
-  }
-  // Fallback for development
-  return localStorage.getItem('authToken') || '';
-}
-
-/** Create a new order */
-export async function createOrder(request: CreateOrderRequest): Promise<CreateOrderResponse> {
-  const token = getAuthToken();
+/**
+ * Creates a new order via /api/bcs proxy endpoint
+ * Uses existing auth mechanism from the proxy
+ */
+export async function createOrder(
+  instrumentId: string,
+  side: OrderSide,
+  type: OrderType,
+  quantity: number,
+  price?: number
+): Promise<CreateOrderResponse> {
+  const clientOrderId = uuidv4();
   
-  const response = await fetch(`${API_BASE}/orders`, {
+  const body: CreateOrderRequest = {
+    clientOrderId,
+    instrumentId,
+    side,
+    type,
+    quantity,
+  };
+  
+  if (type === 'limit' && price !== undefined) {
+    body.price = price;
+  }
+
+  const response = await fetch('/api/bcs', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
-    body: JSON.stringify(request),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      endpoint: '/trade-api-bff-operations/api/v1/orders',
+      method: 'POST',
+      body
+    })
   });
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(error || `Ошибка создания заявки: ${response.status}`);
+    throw new Error(error || 'Failed to create order');
   }
 
   return response.json();
 }
 
-/** Get order status */
+/**
+ * Gets order status via /api/bcs proxy endpoint
+ */
 export async function getOrderStatus(originalClientOrderId: string): Promise<OrderStatusResponse> {
-  const token = getAuthToken();
-  
-  const response = await fetch(`${API_BASE}/orders/${originalClientOrderId}`, {
-    headers: { 'Authorization': `Bearer ${token}` },
+  const response = await fetch('/api/bcs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      endpoint: `/trade-api-bff-operations/api/v1/orders/${originalClientOrderId}`,
+      method: 'GET'
+    })
   });
 
   if (!response.ok) {
-    throw new Error(`Ошибка получения статуса: ${response.status}`);
+    throw new Error('Failed to get order status');
   }
 
   return response.json();
