@@ -1,142 +1,109 @@
-'use client'
+"use client";
 import React, { useEffect, useState } from 'react';
 import { STORAGE_TOKEN_KEY } from '../constants/storage';
 
 /**
- * TokenInput props
+ * ClientHome
+ * Minimal client-side scaffold that reads token from localStorage and conditionally
+ * renders TokenInput or Portfolio. Complex network/error logic is marked TODO.
  */
-interface TokenInputProps { onSubmit: (token: string) => void; initialError?: string; }
 
-/** TokenInput component */
-function TokenInput({ onSubmit, initialError }: TokenInputProps) {
-  const [value, setValue] = useState('');
-  const [error, setError] = useState<string | null>(initialError ?? null);
+type PortfolioData = any; // TODO: replace with a concrete interface matching API response
 
-  useEffect(() => { setError(initialError ?? null); }, [initialError]);
-
-  const submit = () => {
-    const trimmed = value.trim();
-    if (!trimmed) { setError('Token cannot be empty'); return; }
-    onSubmit(trimmed);
-  };
-
-  return (
-    <div>
-      <label>Token:</label>
-      <input
-        value={value}
-        onChange={e => setValue(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Enter') submit(); }}
-      />
-      <button onClick={submit}>Submit</button>
-      {error && <div role={'alert'}>{error}</div>}
-    </div>
-  );
-}
-
-type PortfolioData = { items: any[] };
-
-/**
- * Portfolio component: fetches portfolio using provided token.
- * TODO: Replace the fetch call with the project's API client if one exists.
- */
-function Portfolio({ token, onInvalidToken }: { token: string; onInvalidToken: () => void }) {
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<PortfolioData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [retryToggle, setRetryToggle] = useState(0);
-
-  useEffect(() => {
-    let mounted = true;
-    setLoading(true);
-    setError(null);
-    setData(null);
-
-    // TODO: Ensure Authorization header exactly 'Bearer <token>' and integrate with API client
-    fetch('/api/portfolio', { headers: { Authorization: `Bearer ${token}` } })
-      .then(async res => {
-        if (!mounted) return;
-        if (res.status === 401 || res.status === 403) {
-          // invalid token -> clear storage in parent via callback
-          onInvalidToken();
-          return;
-        }
-        if (!res.ok) {
-          const text = await res.text();
-          setError(text || 'Unknown error fetching portfolio');
-          return;
-        }
-        return res.json();
-      })
-      .then(json => {
-        if (!mounted) return;
-        if (json) setData(json as PortfolioData);
-      })
-      .catch(err => {
-        if (!mounted) return;
-        setError(err?.message || 'Network error');
-      })
-      .finally(() => { if (mounted) setLoading(false); });
-
-    return () => { mounted = false; };
-  }, [token, onInvalidToken, retryToggle]);
-
-  if (loading) return <div>Loading portfolio...</div>;
-  if (error) return (
-    <div>
-      <div role={'alert'}>Error: {error}</div>
-      <button onClick={() => { setRetryToggle(x => x + 1); }}>Retry</button>
-      {/* TODO: More nuanced retry/backoff UX and error classification */}
-    </div>
-  );
-  return (
-    <div>
-      <h2>Portfolio</h2>
-      <pre>{JSON.stringify(data, null, 2)}</pre>
-    </div>
-  );
-}
-
-/**
- * ClientHome - client-only home component that reads token from localStorage and shows TokenInput or Portfolio.
- * - Reads localStorage only inside useEffect to avoid SSR/hydration issues
- * - Treats null/undefined/empty/whitespace as no token
- */
 export default function ClientHome() {
   const [token, setToken] = useState<string | null>(null);
-  const [initialError, setInitialError] = useState<string | undefined>(undefined);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [portfolio, setPortfolio] = useState<PortfolioData | null>(null);
 
   useEffect(() => {
+    // Client-only read of localStorage
     if (typeof window === 'undefined') return;
     const raw = localStorage.getItem(STORAGE_TOKEN_KEY);
     const t = raw ? raw.trim() : null;
     setToken(t && t !== '' ? t : null);
   }, []);
 
-  const handleSubmit = (t: string) => {
-    const trimmed = t.trim();
-    if (!trimmed) { setInitialError('Token cannot be empty'); return; }
-    try {
-      localStorage.setItem(STORAGE_TOKEN_KEY, trimmed);
-      setToken(trimmed);
-    } catch (e) {
-      setInitialError('Unable to save token');
-    }
-  };
+  useEffect(() => {
+    if (!token) return;
+    setLoading(true);
+    setError(null);
+    setPortfolio(null);
 
-  const handleInvalid = () => {
-    try { localStorage.removeItem(STORAGE_TOKEN_KEY); } catch (e) { /* ignore */ }
-    setInitialError('Token invalid or expired. Please re-enter.');
+    // TODO: Replace the timeout with a real fetch to /api/portfolio
+    // - Include Authorization: `Bearer ${token}` header
+    // - On 200: setPortfolio(parsed)
+    // - On 401/403: remove token from localStorage, setToken(null), setError('Token invalid')
+    // - On other errors: setError and allow retry without removing token
+    const id = setTimeout(() => {
+      setPortfolio({ items: [] });
+      setLoading(false);
+    }, 150);
+
+    return () => clearTimeout(id);
+  }, [token]);
+
+  function handleSubmit(raw: string) {
+    const t = raw.trim();
+    if (!t) {
+      setError('Token cannot be empty');
+      return;
+    }
+    // Persist token and trigger portfolio fetch
+    localStorage.setItem(STORAGE_TOKEN_KEY, t);
+    setToken(t);
+  }
+
+  function handleInvalidate() {
+    localStorage.removeItem(STORAGE_TOKEN_KEY);
     setToken(null);
-  };
+    setPortfolio(null);
+    setError('Token invalid or expired');
+  }
 
   return (
     <div>
+      <h1>Welcome</h1>
       {!token ? (
-        <TokenInput onSubmit={handleSubmit} initialError={initialError} />
+        <TokenInput onSubmit={handleSubmit} error={error} />
+      ) : loading ? (
+        <div>Loading portfolio...</div>
+      ) : error ? (
+        <div>
+          <div>{error}</div>
+          <button onClick={() => setError(null)}>Retry</button>
+        </div>
       ) : (
-        <Portfolio token={token} onInvalidToken={handleInvalid} />
+        <PortfolioView data={portfolio} onInvalidToken={handleInvalidate} />
       )}
+    </div>
+  );
+}
+
+function TokenInput({ onSubmit, error }: { onSubmit: (s: string) => void; error?: string | null }) {
+  const [value, setValue] = useState('');
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit(value);
+      }}
+    >
+      <label htmlFor="token">Token</label>
+      <input id="token" value={value} onChange={(e) => setValue(e.target.value)} />
+      <button type="submit">Submit</button>
+      {error && <div role="alert">{error}</div>}
+    </form>
+  );
+}
+
+function PortfolioView({ data, onInvalidToken }: { data: PortfolioData | null; onInvalidToken: () => void }) {
+  // TODO: implement real portfolio rendering and handle API error codes
+  return (
+    <div>
+      <pre>{JSON.stringify(data, null, 2)}</pre>
+      {/* Helper during development: simulate invalid token flow */}
+      <button onClick={onInvalidToken}>Simulate Invalid Token</button>
     </div>
   );
 }
