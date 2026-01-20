@@ -1,14 +1,14 @@
 /**
- * Order API Service
- * Issue #15: API integration for order submission
+ * Order API service using proxy to avoid CORS issues
  */
+import { CreateOrderRequest, OrderResponse } from '../types/order';
 
-import { OrderRequest, OrderResponse, OrderStatusResponse } from '../types/order';
+const API_BASE = '/api/bcs/trade-api-bff-operations/api/v1';
 
-const API_BASE_URL = 'https://be.broker.ru/trade-api-bff-operations/api/v1';
-
+/**
+ * Generate UUID v4 for clientOrderId
+ */
 export function generateClientOrderId(): string {
-  // UUID v4 generation
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
@@ -16,40 +16,39 @@ export function generateClientOrderId(): string {
   });
 }
 
-export async function createOrder(
-  order: OrderRequest,
-  authToken: string
-): Promise<OrderResponse> {
-  const response = await fetch(`${API_BASE_URL}/orders`, {
+/**
+ * Create a new order
+ */
+export async function createOrder(request: CreateOrderRequest): Promise<OrderResponse> {
+  const response = await fetch(`${API_BASE}/orders`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${authToken}`,
     },
-    body: JSON.stringify(order),
+    credentials: 'include',
+    body: JSON.stringify(request),
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.message || 'Ошибка создания заявки');
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || `Ошибка создания заявки: ${response.status}`);
   }
 
   return response.json();
 }
 
-export async function getOrderStatus(
-  clientOrderId: string,
-  authToken: string
-): Promise<OrderStatusResponse> {
-  const response = await fetch(`${API_BASE_URL}/orders/${clientOrderId}`, {
+/**
+ * Get order status by clientOrderId
+ */
+export async function getOrderStatus(clientOrderId: string): Promise<OrderResponse> {
+  const response = await fetch(`${API_BASE}/orders/${clientOrderId}`, {
     method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${authToken}`,
-    },
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
   });
 
   if (!response.ok) {
-    throw new Error('Ошибка получения статуса заявки');
+    throw new Error(`Ошибка получения статуса: ${response.status}`);
   }
 
   return response.json();
