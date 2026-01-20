@@ -1,61 +1,75 @@
-export interface OrderRequest {
+/**
+ * Order API Service for BCS Trade API
+ * Handles order creation and status checking
+ */
+
+import { v4 as uuidv4 } from 'uuid';
+
+export type OrderType = 'market' | 'limit';
+export type OrderSide = 'buy' | 'sell';
+
+export interface CreateOrderRequest {
   clientOrderId: string;
   instrumentId: string;
-  side: 'buy' | 'sell';
-  type: 'market' | 'limit';
+  side: OrderSide;
+  type: OrderType;
   quantity: number;
   price?: number;
 }
 
 export interface OrderResponse {
   originalClientOrderId: string;
-  orderId: string;
   status: string;
   message?: string;
 }
 
-export interface OrderStatus {
-  orderId: string;
-  status: 'pending' | 'filled' | 'rejected' | 'cancelled';
-  filledQuantity?: number;
-  message?: string;
+export interface Instrument {
+  id: string;
+  name: string;
+  ticker: string;
 }
 
-const BASE_URL = 'https://be.broker.ru/trade-api-bff-operations/api/v1';
+const API_BASE = 'https://be.broker.ru/trade-api-bff-operations/api/v1';
 
-function getAuthHeaders(): HeadersInit {
-  // TODO: Implement proper auth token retrieval from Telegram Mini App context
-  const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
-  return {
-    'Content-Type': 'application/json',
-    ...(token && { Authorization: `Bearer ${token}` }),
-  };
+/** Get auth token from Telegram WebApp initData */
+function getAuthToken(): string {
+  if (typeof window !== 'undefined' && window.Telegram?.WebApp?.initData) {
+    return window.Telegram.WebApp.initData;
+  }
+  return '';
 }
 
-export async function submitOrder(request: OrderRequest): Promise<OrderResponse> {
-  const response = await fetch(`${BASE_URL}/orders`, {
+export function generateClientOrderId(): string {
+  return uuidv4();
+}
+
+export async function createOrder(request: CreateOrderRequest): Promise<OrderResponse> {
+  const response = await fetch(`${API_BASE}/orders`, {
     method: 'POST',
-    headers: getAuthHeaders(),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${getAuthToken()}`,
+    },
     body: JSON.stringify(request),
   });
   
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: 'Ошибка сервера' }));
-    throw new Error(error.message || `Ошибка: ${response.status}`);
+    const error = await response.text();
+    throw new Error(error || 'Ошибка создания заявки');
   }
   
   return response.json();
 }
 
-export async function getOrderStatus(originalClientOrderId: string): Promise<OrderStatus> {
-  const response = await fetch(`${BASE_URL}/orders/${originalClientOrderId}`, {
-    method: 'GET',
-    headers: getAuthHeaders(),
+export async function getOrderStatus(orderId: string): Promise<OrderResponse> {
+  const response = await fetch(`${API_BASE}/orders/${orderId}`, {
+    headers: { 'Authorization': `Bearer ${getAuthToken()}` },
   });
   
-  if (!response.ok) {
-    throw new Error(`Ошибка получения статуса: ${response.status}`);
-  }
-  
+  if (!response.ok) throw new Error('Ошибка получения статуса');
   return response.json();
+}
+
+declare global {
+  interface Window { Telegram?: { WebApp?: { initData?: string } } }
 }
