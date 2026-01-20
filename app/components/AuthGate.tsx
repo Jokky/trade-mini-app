@@ -1,33 +1,30 @@
 import React, { useEffect, useState } from 'react';
-import { authStorage } from '../services/authStorage';
+import { getToken, saveToken, removeToken } from '../services/authStorage';
 
 /**
- * AuthGate component
- * - On mount, performs async check for saved token
- * - Shows loading placeholder until check completes (prevents flash)
- * - If token exists -> render Portfolio placeholder
- * - If no token -> render Add Token form and persist on Save
- *
- * TODO: Replace Portfolio placeholder with real Portfolio screen and
- * integrate with app-wide auth/session management.
+ * Minimal AuthGate component
+ * - On mount, checks storage for token (awaits the async check)
+ * - If token exists -> shows Portfolio placeholder
+ * - If no token -> shows Add Token form
+ * - If storage read fails -> shows Add Token form and displays an error message
  */
-export default function AuthGate() {
+export const AuthGate: React.FC = () => {
   const [loading, setLoading] = useState(true);
-  const [tokenExists, setTokenExists] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [input, setInput] = useState('');
+  const [storageError, setStorageError] = useState<string | null>(null);
+  const [showPortfolio, setShowPortfolio] = useState(false);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const token = await authStorage.getToken();
+        const token = await getToken();
         if (!mounted) return;
-        setTokenExists(!!token);
-      } catch (err) {
-        console.error('AuthGate startup error', err);
-        setError('Failed to read stored token. Please enter token.');
-        setTokenExists(false);
+        if (token) {
+          setShowPortfolio(true);
+        }
+      } catch (e) {
+        // Propagate an explicit flag so UI can show helpful message
+        setStorageError((e as Error)?.message || 'storage-error');
       } finally {
         if (mounted) setLoading(false);
       }
@@ -38,45 +35,78 @@ export default function AuthGate() {
   }, []);
 
   if (loading) {
-    // Prevent flash of wrong screen by waiting for async storage check
+    // Prevent flashing wrong UI while async storage read is in progress
     return <div>Loading...</div>;
   }
 
-  if (tokenExists) {
-    // TODO: replace this placeholder with the actual Portfolio screen component
-    return <div>Portfolio screen (token present)</div>;
+  if (showPortfolio) {
+    return (
+      <div>
+        <h2>Portfolio</h2>
+        <p>(Portfolio UI placeholder)</p>
+        <button
+          onClick={async () => {
+            try {
+              await removeToken();
+              setShowPortfolio(false);
+            } catch (e) {
+              // Swallow; in real app surface localized error
+              console.error('Logout failed', e);
+            }
+          }}
+        >
+          Logout (remove token)
+        </button>
+      </div>
+    );
   }
 
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    const t = input.trim();
-    if (!t) {
-      setError('Token must not be empty');
-      return;
-    }
-    try {
-      await authStorage.saveToken(t);
-      // Immediately navigate/render portfolio
-      setTokenExists(true);
-    } catch (err) {
-      console.error('AuthGate save token error', err);
-      setError('Failed to save token. Please try again.');
-    }
-  }
+  return <AddTokenForm storageError={storageError} onSaved={() => setShowPortfolio(true)} />;
+};
+
+/**
+ * Small Add Token form used by AuthGate
+ */
+const AddTokenForm: React.FC<{ storageError: string | null; onSaved: () => void }> = ({ storageError, onSaved }) => {
+  const [token, setToken] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   return (
     <div>
       <h2>Add Token</h2>
-      <form onSubmit={handleSave}>
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Paste auth token"
-        />
-        <button type="submit">Save</button>
-      </form>
+      {storageError && <div style={{ color: 'red' }}>Storage error: {storageError}. Falling back to token form.</div>}
+      <input
+        aria-label="auth-token"
+        value={token}
+        onChange={(e) => setToken(e.target.value)}
+        placeholder="Paste your token"
+      />
+      <button
+        onClick={async () => {
+          setError(null);
+          if (!token || token.trim() === '') {
+            setError('Token must be a non-empty string');
+            return;
+          }
+          setSaving(true);
+          try {
+            await saveToken(token.trim());
+            onSaved();
+          } catch (e) {
+            console.error('Failed to save token', e);
+            setError((e as Error).message || 'save-failed');
+          } finally {
+            setSaving(false);
+          }
+        }}
+        disabled={saving}
+      >
+        Save
+      </button>
       {error && <div style={{ color: 'red' }}>{error}</div>}
     </div>
   );
-}
+};
+
+export default AuthGate;
