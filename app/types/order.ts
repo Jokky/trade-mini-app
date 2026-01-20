@@ -1,17 +1,9 @@
 /**
- * Order types for trading API integration
+ * Order types for trading operations
  */
 
-export type OrderType = 'market' | 'limit';
 export type OrderDirection = 'buy' | 'sell';
-
-export interface InstrumentInfo {
-  id: string;
-  name: string;
-  ticker: string;
-  board: string;
-  availableQuantity: number;
-}
+export type OrderType = 'market' | 'limit';
 
 export interface CreateOrderRequest {
   board: string;
@@ -26,22 +18,15 @@ export interface CreateOrderRequest {
 export interface OrderResponse {
   success: boolean;
   orderId?: string;
-  clientOrderId: string;
-  status?: string;
+  clientOrderId?: string;
   message?: string;
   error?: string;
 }
 
-export interface OrderFormProps {
-  instrument: InstrumentInfo;
-  onSuccess: (response: OrderResponse) => void;
-  onError: (error: string) => void;
-  onClose: () => void;
-}
-
-export interface OrderResultProps {
-  success: boolean;
-  message: string;
-  orderId?: string;
-  onBackToPortfolio: () => void;
+export interface InstrumentForOrder {
+  id: string;
+  name: string;
+  ticker: string;
+  board: string;
+  availableQuantity: number;
 }
