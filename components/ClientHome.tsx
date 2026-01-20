@@ -1,109 +1,151 @@
-"use client";
-import React, { useEffect, useState } from 'react';
+'use client'
+
+import React, { useEffect, useRef, useState } from 'react';
 import { STORAGE_TOKEN_KEY } from '../constants/storage';
 
+interface PortfolioData {
+  items?: unknown[];
+}
+
 /**
- * ClientHome
- * Minimal client-side scaffold that reads token from localStorage and conditionally
- * renders TokenInput or Portfolio. Complex network/error logic is marked TODO.
+ * ClientHome: client-only component that reads token from localStorage,
+ * lets the user submit a token, and fetches the portfolio using
+ * Authorization: 'Bearer <token>'.
+ *
+ * NOTE: This is a minimal, well-typed scaffold. TODOs mark where
+ * tests, richer error handling, and stronger response validation
+ * should be added.
  */
-
-type PortfolioData = any; // TODO: replace with a concrete interface matching API response
-
-export default function ClientHome() {
+export default function ClientHome(): JSX.Element {
   const [token, setToken] = useState<string | null>(null);
+  const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [portfolio, setPortfolio] = useState<PortfolioData | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    // Client-only read of localStorage
+    // client-only localStorage read
     if (typeof window === 'undefined') return;
     const raw = localStorage.getItem(STORAGE_TOKEN_KEY);
     const t = raw ? raw.trim() : null;
-    setToken(t && t !== '' ? t : null);
+    if (!t) return;
+    setToken(t);
+    // attempt initial fetch
+    void fetchPortfolio(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (!token) return;
+  /**
+   * Fetch portfolio with Authorization header.
+   * Handles 200 / 401|403 (invalidates token) / other errors.
+   */
+  async function fetchPortfolio(forcedToken?: string) {
+    const active = forcedToken ?? token;
+    if (!active) return;
     setLoading(true);
     setError(null);
     setPortfolio(null);
 
-    // TODO: Replace the timeout with a real fetch to /api/portfolio
-    // - Include Authorization: `Bearer ${token}` header
-    // - On 200: setPortfolio(parsed)
-    // - On 401/403: remove token from localStorage, setToken(null), setError('Token invalid')
-    // - On other errors: setError and allow retry without removing token
-    const id = setTimeout(() => {
-      setPortfolio({ items: [] });
+    // cancel previous
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+
+    try {
+      const res = await fetch('/api/portfolio', {
+        headers: { Authorization: `Bearer ${active}` },
+        signal: ac.signal,
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        // invalid token -> remove and surface TokenInput
+        localStorage.removeItem(STORAGE_TOKEN_KEY);
+        setToken(null);
+        setError('Token invalid or expired. Please enter a new token.');
+        return;
+      }
+
+      if (!res.ok) {
+        setError('Failed to load portfolio. Please try again.');
+        return;
+      }
+
+      // TODO: validate shape instead of assuming JSON
+      const data = await res.json();
+      setPortfolio(data as PortfolioData);
+    } catch (e: unknown) {
+      if ((e as any)?.name === 'AbortError') {
+        // ignore
+      } else {
+        setError('Network error. Please check connection and retry.');
+      }
+    } finally {
       setLoading(false);
-    }, 150);
+    }
+  }
 
-    return () => clearTimeout(id);
-  }, [token]);
-
-  function handleSubmit(raw: string) {
-    const t = raw.trim();
-    if (!t) {
-      setError('Token cannot be empty');
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = input.trim();
+    if (!trimmed) {
+      setError('Token must not be empty');
       return;
     }
-    // Persist token and trigger portfolio fetch
-    localStorage.setItem(STORAGE_TOKEN_KEY, t);
-    setToken(t);
+    localStorage.setItem(STORAGE_TOKEN_KEY, trimmed);
+    setToken(trimmed);
+    setInput('');
+    void fetchPortfolio(trimmed);
   }
 
-  function handleInvalidate() {
-    localStorage.removeItem(STORAGE_TOKEN_KEY);
-    setToken(null);
-    setPortfolio(null);
-    setError('Token invalid or expired');
-  }
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   return (
     <div>
       <h1>Welcome</h1>
-      {!token ? (
-        <TokenInput onSubmit={handleSubmit} error={error} />
-      ) : loading ? (
-        <div>Loading portfolio...</div>
-      ) : error ? (
-        <div>
-          <div>{error}</div>
-          <button onClick={() => setError(null)}>Retry</button>
-        </div>
-      ) : (
-        <PortfolioView data={portfolio} onInvalidToken={handleInvalidate} />
+
+      {!token && (
+        <form onSubmit={handleSubmit}>
+          <label htmlFor="token-input">Token</label>
+          <input
+            id="token-input"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            aria-label="auth token"
+          />
+          <button type="submit">Submit</button>
+          {error && <div role="alert">{error}</div>}
+        </form>
       )}
-    </div>
-  );
-}
 
-function TokenInput({ onSubmit, error }: { onSubmit: (s: string) => void; error?: string | null }) {
-  const [value, setValue] = useState('');
-  return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        onSubmit(value);
-      }}
-    >
-      <label htmlFor="token">Token</label>
-      <input id="token" value={value} onChange={(e) => setValue(e.target.value)} />
-      <button type="submit">Submit</button>
-      {error && <div role="alert">{error}</div>}
-    </form>
-  );
-}
+      {token && (
+        <section>
+          {loading && <div>Loading portfolio…</div>}
 
-function PortfolioView({ data, onInvalidToken }: { data: PortfolioData | null; onInvalidToken: () => void }) {
-  // TODO: implement real portfolio rendering and handle API error codes
-  return (
-    <div>
-      <pre>{JSON.stringify(data, null, 2)}</pre>
-      {/* Helper during development: simulate invalid token flow */}
-      <button onClick={onInvalidToken}>Simulate Invalid Token</button>
+          {error && (
+            <div>
+              <div role="alert">{error}</div>
+              <button
+                onClick={() => {
+                  // retry using stored token
+                  void fetchPortfolio();
+                }}
+                disabled={loading}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {portfolio && (
+            <pre data-testid="portfolio">{JSON.stringify(portfolio, null, 2)}</pre>
+          )}
+        </section>
+      )}
+
+      {/* TODO: add unit & integration tests covering: token-absent, token-submit (Enter),
+          Authorization header assertion, loading state, 401/403 invalidation, retry flow.
+          Add stronger response typing and snapshot tests for header/title styling. */}
     </div>
   );
 }
