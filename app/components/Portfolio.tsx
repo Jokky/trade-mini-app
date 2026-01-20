@@ -1,105 +1,100 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { BCSAccount, BCSPortfolio, BCSPosition } from '../lib/bcs/types';
-
-// TODO: Replace with actual API calls via server actions or API routes
-const mockAccounts: BCSAccount[] = [
-  { id: '1', name: 'Брокерский счет', type: 'broker', currency: 'RUB' },
-];
-
-const mockPortfolio: BCSPortfolio = {
-  accountId: '1',
-  positions: [
-    { ticker: 'SBER', name: 'Сбербанк', quantity: 10, currentPrice: 280, averagePrice: 250, value: 2800, pnl: 300, pnlPercent: 12, assetType: 'stock' },
-  ],
-  balances: [{ currency: 'RUB', amount: 10000, blocked: 0, available: 10000 }],
-  totalValue: 12800,
-  totalPnl: 300,
-  updatedAt: new Date(),
-};
+import { useState, useEffect, useCallback } from 'react';
+import { bcsService } from '../lib/bcs-api/bcs-service';
+import { BCSPortfolio, BCSPosition, BCSApiError } from '../lib/bcs-api/types';
 
 export default function Portfolio() {
-  const [accounts, setAccounts] = useState<BCSAccount[]>([]);
-  const [selectedAccount, setSelectedAccount] = useState<string>('');
   const [portfolio, setPortfolio] = useState<BCSPortfolio | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  useEffect(() => {
-    // TODO: Fetch accounts from API
-    setAccounts(mockAccounts);
-    if (mockAccounts.length > 0) setSelectedAccount(mockAccounts[0].id);
+  const loadPortfolio = useCallback(async (forceRefresh = false) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await bcsService.getPortfolio(forceRefresh);
+      setPortfolio(data);
+    } catch (err) {
+      const apiError = err as BCSApiError;
+      setError(apiError.message || 'Ошибка загрузки портфеля');
+      if (apiError.code === 401) setIsAuthenticated(false);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    if (!selectedAccount) return;
-    // TODO: Fetch portfolio from API
-    setPortfolio(mockPortfolio);
-  }, [selectedAccount]);
+    // TODO: Check authentication status on mount
+    // TODO: Handle OAuth callback if code in URL
+    const checkAuth = () => {
+      // Simplified auth check - in production, verify token validity
+      setIsAuthenticated(!!localStorage.getItem('bcs_token'));
+    };
+    checkAuth();
+  }, []);
 
-  const handleRefresh = () => {
-    // TODO: Implement refresh with loading state
-    setLoading(true);
-    setTimeout(() => setLoading(false), 1000);
+  useEffect(() => {
+    if (isAuthenticated) loadPortfolio();
+  }, [isAuthenticated, loadPortfolio]);
+
+  const handleLogin = () => {
+    const state = Math.random().toString(36).substring(7);
+    sessionStorage.setItem('oauth_state', state);
+    window.location.href = bcsService.getAuthUrl(state);
   };
 
-  if (error) return <div className="p-4 text-red-500">{error}</div>;
+  if (!isAuthenticated) {
+    return (
+      <div className="p-4 text-center">
+        <h2 className="text-xl font-bold mb-4">Портфель БКС</h2>
+        <p className="mb-4 text-gray-600">Авторизуйтесь для просмотра портфеля</p>
+        <button onClick={handleLogin} className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
+          Войти через БКС
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-4 space-y-4">
-      <div className="flex justify-between items-center">
-        <select 
-          value={selectedAccount} 
-          onChange={(e) => setSelectedAccount(e.target.value)}
-          className="border rounded p-2"
-        >
-          {accounts.map((acc) => (
-            <option key={acc.id} value={acc.id}>{acc.name}</option>
-          ))}
-        </select>
-        <button onClick={handleRefresh} disabled={loading} className="px-4 py-2 bg-blue-500 text-white rounded">
+    <div className="p-4">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-xl font-bold">Портфель БКС</h2>
+        <button onClick={() => loadPortfolio(true)} disabled={loading} className="text-blue-600 disabled:opacity-50">
           {loading ? 'Загрузка...' : 'Обновить'}
         </button>
       </div>
 
+      {error && <div className="bg-red-100 text-red-700 p-3 rounded mb-4">{error}</div>}
+
       {portfolio && (
         <>
-          <div className="bg-gray-100 p-4 rounded">
-            <div className="text-2xl font-bold">{portfolio.totalValue.toLocaleString()} ₽</div>
-            <div className={portfolio.totalPnl >= 0 ? 'text-green-500' : 'text-red-500'}>
-              {portfolio.totalPnl >= 0 ? '+' : ''}{portfolio.totalPnl.toLocaleString()} ₽
+          <div className="bg-gray-100 p-4 rounded-lg mb-4">
+            <div className="text-2xl font-bold">{portfolio.totalValue.toLocaleString()} {portfolio.currency}</div>
+            <div className={`text-lg ${portfolio.totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {portfolio.totalPnl >= 0 ? '+' : ''}{portfolio.totalPnl.toLocaleString()} ({portfolio.totalPnlPercent.toFixed(2)}%)
             </div>
           </div>
 
           <div className="space-y-2">
-            <h3 className="font-semibold">Позиции</h3>
-            {portfolio.positions.length === 0 ? (
-              <p className="text-gray-500">Нет открытых позиций</p>
-            ) : (
-              portfolio.positions.map((pos) => (
-                <div key={pos.ticker} className="border p-3 rounded flex justify-between">
+            {portfolio.positions.map((pos: BCSPosition) => (
+              <div key={pos.ticker} className="border rounded-lg p-3">
+                <div className="flex justify-between">
                   <div>
-                    <div className="font-medium">{pos.ticker}</div>
-                    <div className="text-sm text-gray-500">{pos.name} • {pos.quantity} шт.</div>
+                    <span className="font-bold">{pos.ticker}</span>
+                    <span className="text-gray-500 ml-2 text-sm">{pos.name}</span>
                   </div>
                   <div className="text-right">
-                    <div>{pos.value.toLocaleString()} ₽</div>
-                    <div className={pos.pnl >= 0 ? 'text-green-500 text-sm' : 'text-red-500 text-sm'}>
-                      {pos.pnl >= 0 ? '+' : ''}{pos.pnlPercent}%
+                    <div>{pos.currentValue.toLocaleString()} {pos.currency}</div>
+                    <div className={`text-sm ${pos.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {pos.pnl >= 0 ? '+' : ''}{pos.pnl.toLocaleString()} ({pos.pnlPercent.toFixed(2)}%)
                     </div>
                   </div>
                 </div>
-              ))
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <h3 className="font-semibold">Балансы</h3>
-            {portfolio.balances.map((bal) => (
-              <div key={bal.currency} className="flex justify-between">
-                <span>{bal.currency}</span>
-                <span>{bal.available.toLocaleString()}</span>
+                <div className="text-sm text-gray-500 mt-1">
+                  {pos.quantity} шт. × {pos.currentPrice.toLocaleString()} {pos.currency}
+                </div>
               </div>
             ))}
           </div>
