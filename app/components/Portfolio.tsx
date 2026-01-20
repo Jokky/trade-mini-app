@@ -1,72 +1,116 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
-import type { Portfolio, PortfolioPosition, BCSAccount } from '@/app/lib/bcs-api/client';
 
-export default function PortfolioView() {
-  const [accounts, setAccounts] = useState<BCSAccount[]>([]);
+import React, { useState, useEffect, useCallback } from 'react';
+import OrderForm from './OrderForm';
+
+interface Position {
+  instrumentId: string;
+  ticker: string;
+  name: string;
+  quantity: number;
+  totalValue: number;
+  profitLoss: number;
+  profitLossPercent: number;
+}
+
+interface SelectedInstrument {
+  instrumentId: string;
+  name: string;
+  ticker: string;
+}
+
+export default function Portfolio() {
+  const [accounts, setAccounts] = useState<{ id: string; name: string }[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string>('');
-  const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedInstrument, setSelectedInstrument] = useState<SelectedInstrument | null>(null);
 
   const fetchAccounts = useCallback(async () => {
     try {
-      const res = await fetch('/api/bcs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'accounts' }) });
+      const res = await fetch('/api/bcs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'accounts' })
+      });
       const data = await res.json();
-      if (data.success) setAccounts(data.accounts);
-      else setError(data.error);
-    } catch { setError('Ошибка загрузки счетов'); }
+      if (data.success && data.data?.length) {
+        setAccounts(data.data);
+        setSelectedAccount(data.data[0].id);
+      }
+    } catch (e) {
+      setError('Ошибка загрузки счетов');
+    }
   }, []);
 
-  const fetchPortfolio = useCallback(async (forceRefresh = false) => {
+  const fetchPortfolio = useCallback(async () => {
     if (!selectedAccount) return;
     setLoading(true);
-    setError(null);
     try {
-      const res = await fetch('/api/bcs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'portfolio', accountId: selectedAccount, forceRefresh }) });
+      const res = await fetch('/api/bcs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'portfolio', accountId: selectedAccount })
+      });
       const data = await res.json();
-      if (data.success) setPortfolio(data.portfolio);
-      else setError(data.error);
-    } catch { setError('Ошибка загрузки портфеля'); }
-    setLoading(false);
+      if (data.success) setPositions(data.data?.positions || []);
+      else setError(data.error || 'Ошибка загрузки портфеля');
+    } catch (e) {
+      setError('Ошибка загрузки портфеля');
+    } finally {
+      setLoading(false);
+    }
   }, [selectedAccount]);
 
   useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
-  useEffect(() => { if (selectedAccount) fetchPortfolio(); }, [selectedAccount, fetchPortfolio]);
+  useEffect(() => { fetchPortfolio(); }, [fetchPortfolio]);
 
-  const formatCurrency = (val: number) => val.toLocaleString('ru-RU', { style: 'currency', currency: 'RUB' });
-  const formatPercent = (val: number) => `${val >= 0 ? '+' : ''}${val.toFixed(2)}%`;
+  const handlePositionClick = (pos: Position) => {
+    setSelectedInstrument({ instrumentId: pos.instrumentId, name: pos.name, ticker: pos.ticker });
+  };
 
-  if (error) return <div className="p-4 bg-red-100 text-red-700 rounded">{error}<button onClick={() => setError(null)} className="ml-2 underline">Повторить</button></div>;
+  if (error) return <div className="p-4 text-red-500">{error}</div>;
+  if (loading) return <div className="p-4">Загрузка...</div>;
 
   return (
-    <div className="p-4 space-y-4">
-      <div className="flex gap-2 items-center">
-        <select value={selectedAccount} onChange={(e) => setSelectedAccount(e.target.value)} className="border p-2 rounded flex-1">
-          <option value="">Выберите счёт</option>
-          {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+    <div className="p-4">
+      {accounts.length > 1 && (
+        <select value={selectedAccount} onChange={e => setSelectedAccount(e.target.value)}
+          className="w-full p-2 border rounded mb-4">
+          {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
-        <button onClick={() => fetchPortfolio(true)} disabled={loading || !selectedAccount} className="px-4 py-2 bg-blue-500 text-white rounded disabled:opacity-50">Обновить</button>
-      </div>
-      {loading && <div className="text-center py-8">Загрузка...</div>}
-      {portfolio && !loading && (
-        <div className="space-y-4">
-          <div className="bg-gray-100 p-4 rounded">
-            <div className="text-2xl font-bold">{formatCurrency(portfolio.totalValue)}</div>
-            <div className={portfolio.totalProfitLoss >= 0 ? 'text-green-600' : 'text-red-600'}>{formatCurrency(portfolio.totalProfitLoss)}</div>
-          </div>
-          {portfolio.positions.length === 0 ? <div className="text-gray-500 text-center py-4">Портфель пуст</div> : (
-            <div className="space-y-2">
-              {portfolio.positions.map((p: PortfolioPosition) => (
-                <div key={p.ticker} className="border p-3 rounded flex justify-between items-center">
-                  <div><div className="font-medium">{p.name}</div><div className="text-sm text-gray-500">{p.ticker} • {p.quantity} шт</div></div>
-                  <div className="text-right"><div>{formatCurrency(p.totalValue)}</div><div className={p.profitLoss >= 0 ? 'text-green-600 text-sm' : 'text-red-600 text-sm'}>{formatCurrency(p.profitLoss)} ({formatPercent(p.profitLossPercent)})</div></div>
+      )}
+      <div className="space-y-2">
+        {positions.map(pos => (
+          <div key={pos.instrumentId} onClick={() => handlePositionClick(pos)}
+            className="p-4 bg-white rounded-lg shadow cursor-pointer hover:bg-gray-50">
+            <div className="flex justify-between">
+              <div>
+                <div className="font-medium">{pos.name}</div>
+                <div className="text-sm text-gray-500">{pos.ticker} · {pos.quantity} шт.</div>
+              </div>
+              <div className="text-right">
+                <div className="font-medium">{(pos.totalValue ?? 0).toLocaleString('ru-RU')} ₽</div>
+                <div className={pos.profitLoss >= 0 ? 'text-green-500' : 'text-red-500'}>
+                  {pos.profitLoss >= 0 ? '+' : ''}{(pos.profitLoss ?? 0).toLocaleString('ru-RU')} ₽
+                  ({(pos.profitLossPercent ?? 0).toFixed(2)}%)
                 </div>
-              ))}
+              </div>
             </div>
-          )}
-          <div className="text-xs text-gray-400">Обновлено: {new Date(portfolio.updatedAt).toLocaleString('ru-RU')}</div>
-        </div>
+          </div>
+        ))}
+        {positions.length === 0 && <div className="text-gray-500 text-center py-8">Портфель пуст</div>}
+      </div>
+      {selectedInstrument && (
+        <OrderForm
+          instrumentId={selectedInstrument.instrumentId}
+          instrumentName={selectedInstrument.name}
+          instrumentTicker={selectedInstrument.ticker}
+          onClose={() => setSelectedInstrument(null)}
+          onSuccess={() => { setSelectedInstrument(null); fetchPortfolio(); }}
+          onError={(err) => console.error('Order error:', err)}
+        />
       )}
     </div>
   );
