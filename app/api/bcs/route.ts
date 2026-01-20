@@ -1,106 +1,114 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { BcsTokens, BcsPortfolio, BcsPosition } from '@/app/lib/bcs/types';
+import { BcsPortfolio, BcsPosition, BcsTokens, BcsRawPortfolioResponse } from '@/app/lib/bcs/types';
 
 const BCS_TOKEN_URL = 'https://oauth.bcs.ru/token';
-const BCS_API_BASE = 'https://api.bcs.ru/api/v1';
+const BCS_API_URL = 'https://api.bcs.ru/api/v1';
 
-const getConfig = () => ({
-  clientId: process.env.BCS_CLIENT_ID || '',
-  clientSecret: process.env.BCS_CLIENT_SECRET || '',
-  redirectUri: process.env.BCS_REDIRECT_URI || '',
-});
+function getConfig() {
+  return {
+    clientId: process.env.BCS_CLIENT_ID || '',
+    clientSecret: process.env.BCS_CLIENT_SECRET || '',
+    redirectUri: process.env.BCS_REDIRECT_URI || '',
+  };
+}
 
-// Token storage (use Redis/DB in production)
-const tokenStore = new Map<string, { tokens: BcsTokens; expiresAt: number }>();
+function mapPortfolio(raw: BcsRawPortfolioResponse): BcsPortfolio {
+  let totalValue = 0, totalCost = 0;
+  const positions: BcsPosition[] = raw.positions.map(p => {
+    const value = p.qty * p.last_price;
+    const cost = p.qty * p.avg_price;
+    const pnl = value - cost;
+    totalValue += value;
+    totalCost += cost;
+    return {
+      ticker: p.symbol, name: p.name || p.symbol, quantity: p.qty,
+      avgPrice: p.avg_price, currentPrice: p.last_price, value,
+      pnl, pnlPercent: cost > 0 ? (pnl / cost) * 100 : 0,
+    };
+  });
+  const totalPnl = totalValue - totalCost;
+  return {
+    positions, totalValue, totalCost, totalPnl,
+    totalPnlPercent: totalCost > 0 ? (totalPnl / totalCost) * 100 : 0,
+    currency: raw.currency || 'RUB', updatedAt: new Date().toISOString(),
+  };
+}
 
-async function exchangeCodeForTokens(code: string): Promise<BcsTokens> {
+async function exchangeCode(code: string): Promise<BcsTokens> {
   const config = getConfig();
-  const response = await fetch(BCS_TOKEN_URL, {
+  const res = await fetch(BCS_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      code,
-      client_id: config.clientId,
-      client_secret: config.clientSecret,
+      grant_type: 'authorization_code', code,
+      client_id: config.clientId, client_secret: config.clientSecret,
       redirect_uri: config.redirectUri,
     }),
   });
-  if (!response.ok) throw new Error(`Token exchange failed: ${response.status}`);
-  const data = await response.json();
-  return { accessToken: data.access_token, refreshToken: data.refresh_token, expiresIn: data.expires_in, tokenType: data.token_type };
+  if (!res.ok) throw new Error(`Token exchange failed: ${res.status}`);
+  const data = await res.json();
+  return {
+    accessToken: data.access_token, refreshToken: data.refresh_token,
+    expiresAt: Date.now() + data.expires_in * 1000, tokenType: data.token_type || 'Bearer',
+  };
 }
 
-async function refreshAccessToken(refreshToken: string): Promise<BcsTokens> {
+async function refreshTokens(refreshToken: string): Promise<BcsTokens> {
   const config = getConfig();
-  const response = await fetch(BCS_TOKEN_URL, {
+  const res = await fetch(BCS_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: config.clientId, client_secret: config.clientSecret }),
+    body: new URLSearchParams({
+      grant_type: 'refresh_token', refresh_token: refreshToken,
+      client_id: config.clientId, client_secret: config.clientSecret,
+    }),
   });
-  if (!response.ok) throw new Error(`Token refresh failed: ${response.status}`);
-  const data = await response.json();
-  return { accessToken: data.access_token, refreshToken: data.refresh_token, expiresIn: data.expires_in, tokenType: data.token_type };
+  if (!res.ok) throw new Error(`Token refresh failed: ${res.status}`);
+  const data = await res.json();
+  return {
+    accessToken: data.access_token, refreshToken: data.refresh_token,
+    expiresAt: Date.now() + data.expires_in * 1000, tokenType: data.token_type || 'Bearer',
+  };
 }
 
-async function fetchPortfolioWithRetry(userId: string): Promise<BcsPortfolio> {
-  const stored = tokenStore.get(userId);
-  if (!stored) throw new Error('Not authenticated');
+function setTokenCookies(res: NextResponse, tokens: BcsTokens) {
+  const opts = { httpOnly: true, secure: true, sameSite: 'strict' as const, path: '/' };
+  res.cookies.set('bcs_access', tokens.accessToken, { ...opts, maxAge: 3600 });
+  res.cookies.set('bcs_refresh', tokens.refreshToken, { ...opts, maxAge: 604800 });
+  res.cookies.set('bcs_expires', String(tokens.expiresAt), { ...opts, maxAge: 3600 });
+}
+
+export async function GET(req: NextRequest) {
+  const access = req.cookies.get('bcs_access')?.value;
+  const refresh = req.cookies.get('bcs_refresh')?.value;
+  if (!access) return NextResponse.json({ error: 'Not authenticated', code: 'AUTH_REQUIRED' }, { status: 401 });
   
-  let { tokens } = stored;
-  if (Date.now() > stored.expiresAt - 60000) {
-    tokens = await refreshAccessToken(tokens.refreshToken);
-    tokenStore.set(userId, { tokens, expiresAt: Date.now() + tokens.expiresIn * 1000 });
-  }
+  const fetchPortfolio = async (token: string): Promise<Response> => {
+    return fetch(`${BCS_API_URL}/portfolio`, { headers: { Authorization: `Bearer ${token}` } });
+  };
 
-  const response = await fetch(`${BCS_API_BASE}/portfolio`, {
-    headers: { Authorization: `Bearer ${tokens.accessToken}` },
-  });
-
-  if (response.status === 401) {
-    tokens = await refreshAccessToken(tokens.refreshToken);
-    tokenStore.set(userId, { tokens, expiresAt: Date.now() + tokens.expiresIn * 1000 });
-    const retry = await fetch(`${BCS_API_BASE}/portfolio`, { headers: { Authorization: `Bearer ${tokens.accessToken}` } });
-    if (!retry.ok) throw new Error(`Portfolio fetch failed: ${retry.status}`);
-    return mapPortfolio(await retry.json());
+  let res = await fetchPortfolio(access);
+  if (res.status === 401 && refresh) {
+    try {
+      const newTokens = await refreshTokens(refresh);
+      res = await fetchPortfolio(newTokens.accessToken);
+      const response = NextResponse.json(mapPortfolio(await res.json()));
+      setTokenCookies(response, newTokens);
+      return response;
+    } catch { return NextResponse.json({ error: 'Session expired', code: 'SESSION_EXPIRED' }, { status: 401 }); }
   }
-  if (response.status === 429) throw new Error('Rate limit exceeded. Please try again later.');
-  if (!response.ok) throw new Error(`Portfolio fetch failed: ${response.status}`);
-  return mapPortfolio(await response.json());
+  if (res.status === 429) return NextResponse.json({ error: 'Rate limited', code: 'RATE_LIMITED' }, { status: 429 });
+  if (!res.ok) return NextResponse.json({ error: 'API error', code: 'API_ERROR' }, { status: res.status });
+  return NextResponse.json(mapPortfolio(await res.json()));
 }
 
-function mapPortfolio(data: any): BcsPortfolio {
-  const positions: BcsPosition[] = (data.positions || []).map((p: any) => {
-    const value = p.quantity * p.currentPrice;
-    const cost = p.quantity * p.avgPrice;
-    const pnl = value - cost;
-    return { ticker: p.ticker, name: p.name, quantity: p.quantity, avgPrice: p.avgPrice, currentPrice: p.currentPrice, value, pnl, pnlPercent: cost ? (pnl / cost) * 100 : 0, currency: p.currency || 'RUB' };
-  });
-  const totalValue = positions.reduce((sum, p) => sum + p.value, 0);
-  const totalCost = positions.reduce((sum, p) => sum + p.avgPrice * p.quantity, 0);
-  const totalPnl = totalValue - totalCost;
-  return { accountId: data.accountId || '', positions, totalValue, totalCost, totalPnl, totalPnlPercent: totalCost ? (totalPnl / totalCost) * 100 : 0, currency: 'RUB', updatedAt: new Date().toISOString() };
-}
-
-export async function POST(request: NextRequest) {
+export async function POST(req: NextRequest) {
+  const { code } = await req.json();
+  if (!code) return NextResponse.json({ error: 'Code required' }, { status: 400 });
   try {
-    const { action, code, userId } = await request.json();
-    if (action === 'auth' && code) {
-      const tokens = await exchangeCodeForTokens(code);
-      const id = userId || crypto.randomUUID();
-      tokenStore.set(id, { tokens, expiresAt: Date.now() + tokens.expiresIn * 1000 });
-      const res = NextResponse.json({ success: true, userId: id });
-      res.cookies.set('bcs_session', id, { httpOnly: true, secure: true, sameSite: 'strict', maxAge: 86400 });
-      return res;
-    }
-    if (action === 'portfolio') {
-      const sessionId = request.cookies.get('bcs_session')?.value || userId;
-      if (!sessionId) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-      const portfolio = await fetchPortfolioWithRetry(sessionId);
-      return NextResponse.json(portfolio);
-    }
-    return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+    const tokens = await exchangeCode(code);
+    const response = NextResponse.json({ success: true });
+    setTokenCookies(response, tokens);
+    return response;
+  } catch (e) { return NextResponse.json({ error: 'Auth failed' }, { status: 401 }); }
 }
