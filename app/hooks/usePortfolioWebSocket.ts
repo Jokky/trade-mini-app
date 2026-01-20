@@ -1,65 +1,53 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+/**
+ * React hook for WebSocket portfolio subscription
+ * Manages connection lifecycle with component mount/unmount
+ */
+
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { PortfolioWebSocketService } from '../services/websocket/portfolioWebSocket';
-import { ConnectionState, PortfolioData } from '../services/websocket/types';
+import { PortfolioData, WebSocketConnectionState } from '../services/websocket/types';
 
-const WS_URL = 'wss://trade-api.bcs.ru/websocket/portfolio';
+const WS_URL = process.env.NEXT_PUBLIC_BCS_WS_URL || 'wss://trade-api.bcs.ru/ws/portfolio';
 
-async function fetchPortfolioHttp(token: string): Promise<PortfolioData> {
-  const res = await fetch('/api/portfolio', { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) throw new Error('HTTP fetch failed');
-  return res.json();
+interface UsePortfolioWebSocketResult {
+  portfolio: PortfolioData | null;
+  connectionState: WebSocketConnectionState;
+  reconnect: () => void;
 }
 
-export function usePortfolioWebSocket(token: string | null) {
-  const [data, setData] = useState<PortfolioData | null>(null);
-  const [state, setState] = useState<ConnectionState>('disconnected');
-  const [error, setError] = useState<string | null>(null);
+export function usePortfolioWebSocket(token: string): UsePortfolioWebSocketResult {
+  const [portfolio, setPortfolio] = useState<PortfolioData | null>(null);
+  const [connectionState, setConnectionState] = useState<WebSocketConnectionState>('disconnected');
   const serviceRef = useRef<PortfolioWebSocketService | null>(null);
-
-  const handleVisibilityChange = useCallback(() => {
-    if (!serviceRef.current) return;
-    if (document.hidden) {
-      serviceRef.current.disconnect();
-    } else if (token) {
-      serviceRef.current.connect();
-    }
-  }, [token]);
 
   useEffect(() => {
     if (!token) return;
 
-    serviceRef.current = new PortfolioWebSocketService({
-      url: WS_URL,
-      token,
-      onData: setData,
-      onStateChange: setState,
-      onError: setError,
-      httpFallback: () => fetchPortfolioHttp(token),
-    });
+    const service = new PortfolioWebSocketService({ url: WS_URL, token });
+    serviceRef.current = service;
 
-    serviceRef.current.connect();
+    service.onData(setPortfolio);
+    service.onStateChange(setConnectionState);
+    service.connect();
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.Telegram?.WebApp?.onEvent?.('viewportChanged', handleVisibilityChange);
+    // Handle Telegram Mini App visibility changes
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        service.connect();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
-      serviceRef.current?.disconnect();
+      document.removeEventListener('visibilitychange', handleVisibility);
+      service.disconnect();
       serviceRef.current = null;
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.Telegram?.WebApp?.offEvent?.('viewportChanged', handleVisibilityChange);
     };
-  }, [token, handleVisibilityChange]);
+  }, [token]);
 
-  return { data, state, error };
-}
+  const reconnect = useCallback(() => {
+    serviceRef.current?.connect();
+  }, []);
 
-declare global {
-  interface Window {
-    Telegram?: {
-      WebApp?: {
-        onEvent?: (event: string, callback: () => void) => void;
-        offEvent?: (event: string, callback: () => void) => void;
-      };
-    };
-  }
+  return { portfolio, connectionState, reconnect };
 }
