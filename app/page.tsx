@@ -1,12 +1,11 @@
-'use client';
+import ClientHome from '../components/ClientHome';
 
-export default function Home() {
+export default function Page() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-24">
-      <h1 className="text-4xl font-bold">Trade Mini App</h1>
-      <p className="mt-4 text-lg text-gray-600">
-        Welcome to the Telegram Trading Mini App
-      </p>
+    <main>
+      <h1>Welcome to Trade Mini App</h1>
+      <p>Track your portfolio by providing an API token.</p>
+      <ClientHome />
     </main>
   );
 }
