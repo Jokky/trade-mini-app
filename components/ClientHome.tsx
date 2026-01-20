@@ -1,151 +1,175 @@
 'use client'
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { STORAGE_TOKEN_KEY } from '../constants/storage';
 
-interface PortfolioData {
-  items?: unknown[];
+/** Minimal portfolio item shape - expand to match backend contract */
+export interface PortfolioItem {
+  id: string;
+  name: string;
+  value: number;
+}
+
+export interface PortfolioData {
+  items: PortfolioItem[];
 }
 
 /**
- * ClientHome: client-only component that reads token from localStorage,
- * lets the user submit a token, and fetches the portfolio using
- * Authorization: 'Bearer <token>'.
- *
- * NOTE: This is a minimal, well-typed scaffold. TODOs mark where
- * tests, richer error handling, and stronger response validation
- * should be added.
+ * TokenInput - simple controlled form that trims input and validates non-empty values.
  */
-export default function ClientHome(): JSX.Element {
+export const TokenInput: React.FC<{
+  onSubmit: (token: string) => void;
+  error?: string | null;
+}> = ({ onSubmit, error }) => {
+  const [value, setValue] = useState('');
+  const [validation, setValidation] = useState<string | null>(null);
+
+  function submit(e?: React.FormEvent) {
+    e?.preventDefault();
+    const trimmed = value.trim();
+    if (!trimmed) {
+      setValidation('Please enter a token');
+      return;
+    }
+    setValidation(null);
+    onSubmit(trimmed);
+  }
+
+  return (
+    <form onSubmit={submit}>
+      <label htmlFor="token-input">Token</label>
+      <input
+        id="token-input"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="Enter token"
+        aria-label="token"
+      />
+      <button type="submit">Submit</button>
+      {validation && <div role="alert">{validation}</div>}
+      {error && <div role="alert">{error}</div>}
+    </form>
+  );
+};
+
+/**
+ * ClientHome - client-only component that reads token from localStorage and
+ * conditionally renders TokenInput or Portfolio. Uses STORAGE_TOKEN_KEY.
+ * TODO: Add stricter typing/validation for portfolio response and tests.
+ */
+const ClientHome: React.FC = () => {
   const [token, setToken] = useState<string | null>(null);
-  const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [portfolio, setPortfolio] = useState<PortfolioData | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    // client-only localStorage read
+    // Client-only read of localStorage
     if (typeof window === 'undefined') return;
-    const raw = localStorage.getItem(STORAGE_TOKEN_KEY);
-    const t = raw ? raw.trim() : null;
-    if (!t) return;
-    setToken(t);
-    // attempt initial fetch
-    void fetchPortfolio(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    try {
+      const raw = localStorage.getItem(STORAGE_TOKEN_KEY);
+      const t = raw ? raw.trim() : null;
+      setToken(t && t.length > 0 ? t : null);
+    } catch (e) {
+      // Ignore localStorage access errors but log for diagnostics
+      // eslint-disable-next-line no-console
+      console.error('Failed to read token from storage', e);
+      setToken(null);
+    }
   }, []);
 
-  /**
-   * Fetch portfolio with Authorization header.
-   * Handles 200 / 401|403 (invalidates token) / other errors.
-   */
   async function fetchPortfolio(forcedToken?: string) {
-    const active = forcedToken ?? token;
-    if (!active) return;
+    const t = forcedToken ?? token;
+    if (!t) return;
     setLoading(true);
     setError(null);
     setPortfolio(null);
 
-    // cancel previous
-    abortRef.current?.abort();
-    const ac = new AbortController();
-    abortRef.current = ac;
-
+    // TODO: use AbortController to support cancellation on unmount
     try {
       const res = await fetch('/api/portfolio', {
-        headers: { Authorization: `Bearer ${active}` },
-        signal: ac.signal,
+        headers: {
+          Authorization: `Bearer ${t}`,
+          'Content-Type': 'application/json',
+        },
       });
 
       if (res.status === 401 || res.status === 403) {
-        // invalid token -> remove and surface TokenInput
-        localStorage.removeItem(STORAGE_TOKEN_KEY);
+        // invalid/expired token -> clear storage and reset token state
+        try {
+          localStorage.removeItem(STORAGE_TOKEN_KEY);
+        } catch (e) {
+          // ignore
+        }
         setToken(null);
-        setError('Token invalid or expired. Please enter a new token.');
+        setError('Token invalid or expired. Please re-enter your token.');
+        setLoading(false);
         return;
       }
 
       if (!res.ok) {
         setError('Failed to load portfolio. Please try again.');
+        setLoading(false);
         return;
       }
 
-      // TODO: validate shape instead of assuming JSON
-      const data = await res.json();
-      setPortfolio(data as PortfolioData);
-    } catch (e: unknown) {
-      if ((e as any)?.name === 'AbortError') {
-        // ignore
-      } else {
-        setError('Network error. Please check connection and retry.');
-      }
+      // Basic JSON parsing - validate shape in tests / expand as needed
+      const data = (await res.json()) as PortfolioData;
+      setPortfolio(data);
+    } catch (err) {
+      setError('Network error while fetching portfolio.');
     } finally {
       setLoading(false);
     }
   }
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmed = input.trim();
-    if (!trimmed) {
-      setError('Token must not be empty');
-      return;
+  function handleTokenSubmit(newToken: string) {
+    try {
+      localStorage.setItem(STORAGE_TOKEN_KEY, newToken);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to write token to storage', e);
     }
-    localStorage.setItem(STORAGE_TOKEN_KEY, trimmed);
-    setToken(trimmed);
-    setInput('');
-    void fetchPortfolio(trimmed);
+    setToken(newToken);
+    void fetchPortfolio(newToken);
   }
 
-  useEffect(() => () => abortRef.current?.abort(), []);
+  // If token present on client load, auto-fetch portfolio
+  useEffect(() => {
+    if (token) void fetchPortfolio(token);
+  }, [token]);
+
+  if (!token) {
+    return <TokenInput onSubmit={handleTokenSubmit} error={error} />;
+  }
 
   return (
     <div>
-      <h1>Welcome</h1>
-
-      {!token && (
-        <form onSubmit={handleSubmit}>
-          <label htmlFor="token-input">Token</label>
-          <input
-            id="token-input"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            aria-label="auth token"
-          />
-          <button type="submit">Submit</button>
-          {error && <div role="alert">{error}</div>}
-        </form>
+      <h1>Portfolio</h1>
+      {loading && <div>Loading...</div>}
+      {error && (
+        <div>
+          <div role="alert">{error}</div>
+          <button
+            onClick={() => {
+              setError(null);
+              void fetchPortfolio();
+            }}
+            disabled={loading}
+          >
+            Retry
+          </button>
+        </div>
       )}
-
-      {token && (
-        <section>
-          {loading && <div>Loading portfolio…</div>}
-
-          {error && (
-            <div>
-              <div role="alert">{error}</div>
-              <button
-                onClick={() => {
-                  // retry using stored token
-                  void fetchPortfolio();
-                }}
-                disabled={loading}
-              >
-                Retry
-              </button>
-            </div>
-          )}
-
-          {portfolio && (
-            <pre data-testid="portfolio">{JSON.stringify(portfolio, null, 2)}</pre>
-          )}
-        </section>
+      {portfolio && (
+        <ul>
+          {portfolio.items.map((it) => (
+            <li key={it.id}>{it.name}: {it.value}</li>
+          ))}
+        </ul>
       )}
-
-      {/* TODO: add unit & integration tests covering: token-absent, token-submit (Enter),
-          Authorization header assertion, loading state, 401/403 invalidation, retry flow.
-          Add stronger response typing and snapshot tests for header/title styling. */}
     </div>
   );
-}
+};
+
+export default ClientHome;
