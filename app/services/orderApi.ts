@@ -1,95 +1,90 @@
 /**
- * Order API Service for BCS Trade API
- * Handles order creation and status checking via /api/bcs proxy
+ * Order API Service - Создание и проверка статуса заявок
+ * Использует существующий /api/bcs proxy с action-based форматом
  */
-
-import { v4 as uuidv4 } from 'uuid';
-
-export type OrderType = 'market' | 'limit';
-export type OrderSide = 'buy' | 'sell';
 
 export interface CreateOrderRequest {
   clientOrderId: string;
   instrumentId: string;
-  side: OrderSide;
-  type: OrderType;
+  side: 'buy' | 'sell';
+  type: 'market' | 'limit';
   quantity: number;
   price?: number;
 }
 
 export interface CreateOrderResponse {
-  originalClientOrderId: string;
+  success: boolean;
   orderId?: string;
-  status: string;
-  message?: string;
+  originalClientOrderId?: string;
+  status?: string;
+  error?: string;
 }
 
 export interface OrderStatusResponse {
-  orderId: string;
-  status: 'pending' | 'filled' | 'rejected' | 'cancelled';
+  success: boolean;
+  status?: string;
   filledQuantity?: number;
-  message?: string;
+  error?: string;
 }
 
-/**
- * Creates a new order via /api/bcs proxy endpoint
- * Uses existing auth mechanism from the proxy
- */
-export async function createOrder(
-  instrumentId: string,
-  side: OrderSide,
-  type: OrderType,
-  quantity: number,
-  price?: number
-): Promise<CreateOrderResponse> {
-  const clientOrderId = uuidv4();
-  
-  const body: CreateOrderRequest = {
-    clientOrderId,
-    instrumentId,
-    side,
-    type,
-    quantity,
-  };
-  
-  if (type === 'limit' && price !== undefined) {
-    body.price = price;
-  }
+/** Генерация UUID v4 для clientOrderId */
+export function generateClientOrderId(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
 
-  const response = await fetch('/api/bcs', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      endpoint: '/trade-api-bff-operations/api/v1/orders',
+/** Создание заявки через /api/bcs proxy */
+export async function createOrder(request: CreateOrderRequest): Promise<CreateOrderResponse> {
+  try {
+    const response = await fetch('/api/bcs', {
       method: 'POST',
-      body
-    })
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(error || 'Failed to create order');
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'createOrder',
+        orderData: request
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      return {
+        success: true,
+        orderId: data.orderId,
+        originalClientOrderId: data.originalClientOrderId || request.clientOrderId,
+        status: data.status
+      };
+    }
+    
+    return { success: false, error: data.error || 'Ошибка создания заявки' };
+  } catch (error) {
+    return { success: false, error: 'Ошибка сети при создании заявки' };
   }
-
-  return response.json();
 }
 
-/**
- * Gets order status via /api/bcs proxy endpoint
- */
+/** Получение статуса заявки */
 export async function getOrderStatus(originalClientOrderId: string): Promise<OrderStatusResponse> {
-  const response = await fetch('/api/bcs', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      endpoint: `/trade-api-bff-operations/api/v1/orders/${originalClientOrderId}`,
-      method: 'GET'
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to get order status');
+  try {
+    const response = await fetch('/api/bcs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'orderStatus',
+        originalClientOrderId
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      return { success: true, status: data.status, filledQuantity: data.filledQuantity };
+    }
+    
+    return { success: false, error: data.error || 'Ошибка получения статуса' };
+  } catch (error) {
+    return { success: false, error: 'Ошибка сети' };
   }
-
-  return response.json();
 }
