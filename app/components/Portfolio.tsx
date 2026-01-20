@@ -1,101 +1,72 @@
 'use client';
-import { useState, useEffect, useCallback, useRef } from 'react';
-import type { BcsAccount, BcsPortfolio } from '@/app/lib/bcs-api/client';
+import { useState, useEffect, useCallback } from 'react';
+import type { Portfolio, PortfolioPosition, BCSAccount } from '@/app/lib/bcs-api/client';
 
-export default function Portfolio() {
-  const [accounts, setAccounts] = useState<BcsAccount[]>([]);
+export default function PortfolioView() {
+  const [accounts, setAccounts] = useState<BCSAccount[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string>('');
-  const [portfolio, setPortfolio] = useState<BcsPortfolio | null>(null);
+  const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isAuthed, setIsAuthed] = useState(false);
-  const touchStartY = useRef(0);
 
-  const handleAuth = async () => {
-    const res = await fetch('/api/bcs?action=auth-url');
-    const { url } = await res.json();
-    window.location.href = url;
-  };
-
-  const loadAccounts = useCallback(async () => {
-    setLoading(true);
+  const fetchAccounts = useCallback(async () => {
     try {
-      const res = await fetch('/api/bcs?action=accounts');
-      if (res.status === 401) { setIsAuthed(false); return; }
-      const { accounts } = await res.json();
-      setAccounts(accounts || []);
-      setIsAuthed(true);
-      if (accounts?.length) setSelectedAccount(accounts[0].id);
-    } catch { setError('Не удалось загрузить счета'); }
-    setLoading(false);
+      const res = await fetch('/api/bcs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'accounts' }) });
+      const data = await res.json();
+      if (data.success) setAccounts(data.accounts);
+      else setError(data.error);
+    } catch { setError('Ошибка загрузки счетов'); }
   }, []);
 
-  const loadPortfolio = useCallback(async (refresh = false) => {
+  const fetchPortfolio = useCallback(async (forceRefresh = false) => {
     if (!selectedAccount) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/bcs?action=portfolio&accountId=${selectedAccount}&refresh=${refresh}`);
-      if (res.status === 401) { setIsAuthed(false); return; }
-      if (!res.ok) throw new Error();
-      const { portfolio } = await res.json();
-      setPortfolio(portfolio);
-    } catch { setError('Не удалось загрузить портфель'); }
+      const res = await fetch('/api/bcs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'portfolio', accountId: selectedAccount, forceRefresh }) });
+      const data = await res.json();
+      if (data.success) setPortfolio(data.portfolio);
+      else setError(data.error);
+    } catch { setError('Ошибка загрузки портфеля'); }
     setLoading(false);
   }, [selectedAccount]);
 
-  useEffect(() => { loadAccounts(); }, [loadAccounts]);
-  useEffect(() => { if (selectedAccount) loadPortfolio(); }, [selectedAccount, loadPortfolio]);
+  useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+  useEffect(() => { if (selectedAccount) fetchPortfolio(); }, [selectedAccount, fetchPortfolio]);
 
-  const handleTouchStart = (e: React.TouchEvent) => { touchStartY.current = e.touches[0].clientY; };
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    const delta = e.changedTouches[0].clientY - touchStartY.current;
-    if (delta > 80 && window.scrollY === 0) loadPortfolio(true);
-  };
+  const formatCurrency = (val: number) => val.toLocaleString('ru-RU', { style: 'currency', currency: 'RUB' });
+  const formatPercent = (val: number) => `${val >= 0 ? '+' : ''}${val.toFixed(2)}%`;
 
-  if (!isAuthed) {
-    return (
-      <div className="p-4 text-center">
-        <p className="mb-4">Требуется авторизация в БКС</p>
-        <button onClick={handleAuth} className="bg-blue-600 text-white px-4 py-2 rounded">Войти через БКС</button>
-        {error && <p className="mt-2 text-red-500">{error}</p>}
-      </div>
-    );
-  }
+  if (error) return <div className="p-4 bg-red-100 text-red-700 rounded">{error}<button onClick={() => setError(null)} className="ml-2 underline">Повторить</button></div>;
 
   return (
-    <div className="p-4" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-      <div className="flex justify-between items-center mb-4">
-        <select value={selectedAccount} onChange={e => setSelectedAccount(e.target.value)} className="border p-2 rounded">
-          {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+    <div className="p-4 space-y-4">
+      <div className="flex gap-2 items-center">
+        <select value={selectedAccount} onChange={(e) => setSelectedAccount(e.target.value)} className="border p-2 rounded flex-1">
+          <option value="">Выберите счёт</option>
+          {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
-        <button onClick={() => loadPortfolio(true)} disabled={loading} className="bg-blue-600 text-white px-3 py-1 rounded">
-          {loading ? '...' : 'Обновить'}
-        </button>
+        <button onClick={() => fetchPortfolio(true)} disabled={loading || !selectedAccount} className="px-4 py-2 bg-blue-500 text-white rounded disabled:opacity-50">Обновить</button>
       </div>
-      {error && <p className="text-red-500 mb-4">{error}</p>}
-      {portfolio && (
-        <>
-          <div className="bg-gray-100 p-3 rounded mb-4">
-            <p className="text-lg font-bold">{portfolio.totalValue.toLocaleString()} {portfolio.currency}</p>
-            <p className={portfolio.totalProfitLoss >= 0 ? 'text-green-600' : 'text-red-600'}>
-              {portfolio.totalProfitLoss >= 0 ? '+' : ''}{portfolio.totalProfitLoss.toLocaleString()} {portfolio.currency}
-            </p>
+      {loading && <div className="text-center py-8">Загрузка...</div>}
+      {portfolio && !loading && (
+        <div className="space-y-4">
+          <div className="bg-gray-100 p-4 rounded">
+            <div className="text-2xl font-bold">{formatCurrency(portfolio.totalValue)}</div>
+            <div className={portfolio.totalProfitLoss >= 0 ? 'text-green-600' : 'text-red-600'}>{formatCurrency(portfolio.totalProfitLoss)}</div>
           </div>
-          {portfolio.positions.length === 0 ? <p className="text-gray-500">Портфель пуст</p> : (
-            <ul className="space-y-2">
-              {portfolio.positions.map(p => (
-                <li key={p.ticker} className="border p-3 rounded">
-                  <div className="flex justify-between"><span className="font-medium">{p.ticker}</span><span>{p.totalValue.toLocaleString()}</span></div>
-                  <div className="text-sm text-gray-600">{p.name} • {p.quantity} шт</div>
-                  <div className={`text-sm ${p.profitLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {p.profitLoss >= 0 ? '+' : ''}{p.profitLoss.toLocaleString()} ({p.profitLossPercent.toFixed(2)}%)
-                  </div>
-                </li>
+          {portfolio.positions.length === 0 ? <div className="text-gray-500 text-center py-4">Портфель пуст</div> : (
+            <div className="space-y-2">
+              {portfolio.positions.map((p: PortfolioPosition) => (
+                <div key={p.ticker} className="border p-3 rounded flex justify-between items-center">
+                  <div><div className="font-medium">{p.name}</div><div className="text-sm text-gray-500">{p.ticker} • {p.quantity} шт</div></div>
+                  <div className="text-right"><div>{formatCurrency(p.totalValue)}</div><div className={p.profitLoss >= 0 ? 'text-green-600 text-sm' : 'text-red-600 text-sm'}>{formatCurrency(p.profitLoss)} ({formatPercent(p.profitLossPercent)})</div></div>
+                </div>
               ))}
-            </ul>
+            </div>
           )}
-        </>
+          <div className="text-xs text-gray-400">Обновлено: {new Date(portfolio.updatedAt).toLocaleString('ru-RU')}</div>
+        </div>
       )}
     </div>
   );
