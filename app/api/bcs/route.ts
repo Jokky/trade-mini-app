@@ -1,90 +1,92 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { bcsClient, BcsTokens } from '@/app/lib/bcs-api/client';
+import { cookies } from 'next/headers';
 
-const BCS_API_BASE = 'https://api.bcs.ru/trade/v1';
 const CLIENT_ID = process.env.BCS_CLIENT_ID || '';
 const CLIENT_SECRET = process.env.BCS_CLIENT_SECRET || '';
+const REDIRECT_URI = process.env.BCS_REDIRECT_URI || '';
+const TOKEN_COOKIE = 'bcs_session';
 
-interface TokenStore {
-  accessToken?: string;
-  refreshToken?: string;
-  expiresAt?: number;
-}
-
-const tokenStore: TokenStore = {};
-
-async function refreshAccessToken(): Promise<string> {
-  if (!tokenStore.refreshToken) throw new Error('No refresh token available');
-  
-  const res = await fetch(`${BCS_API_BASE}/oauth/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token: tokenStore.refreshToken,
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET,
-    }),
-  });
-  
-  if (!res.ok) throw new Error('Token refresh failed');
-  const data = await res.json();
-  tokenStore.accessToken = data.access_token;
-  tokenStore.refreshToken = data.refresh_token;
-  tokenStore.expiresAt = Date.now() + data.expires_in * 1000;
-  return data.access_token;
-}
-
-async function getValidToken(): Promise<string> {
-  if (tokenStore.accessToken && tokenStore.expiresAt && Date.now() < tokenStore.expiresAt - 60000) {
-    return tokenStore.accessToken;
-  }
-  return refreshAccessToken();
-}
-
-export async function POST(req: NextRequest) {
-  const { action, code, accountId } = await req.json();
-  
+function getTokensFromCookie(): BcsTokens | null {
   try {
-    if (action === 'auth') {
-      const res = await fetch(`${BCS_API_BASE}/oauth/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'authorization_code',
-          code,
-          client_id: CLIENT_ID,
-          client_secret: CLIENT_SECRET,
-        }),
-      });
-      if (!res.ok) return NextResponse.json({ error: 'Ошибка авторизации' }, { status: 401 });
-      const data = await res.json();
-      tokenStore.accessToken = data.access_token;
-      tokenStore.refreshToken = data.refresh_token;
-      tokenStore.expiresAt = Date.now() + data.expires_in * 1000;
-      return NextResponse.json({ success: true });
-    }
-    
-    if (action === 'accounts') {
-      const token = await getValidToken();
-      const res = await fetch(`${BCS_API_BASE}/accounts`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) return NextResponse.json({ error: 'Не удалось получить счета' }, { status: res.status });
-      return NextResponse.json(await res.json());
-    }
-    
-    if (action === 'portfolio') {
-      const token = await getValidToken();
-      const res = await fetch(`${BCS_API_BASE}/accounts/${accountId}/portfolio`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) return NextResponse.json({ error: 'Не удалось получить портфель' }, { status: res.status });
-      return NextResponse.json(await res.json());
-    }
-    
-    return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
-  } catch (e) {
-    const message = e instanceof Error ? e.message : 'Ошибка сервера';
-    return NextResponse.json({ error: message }, { status: 500 });
+    const cookieStore = cookies();
+    const session = cookieStore.get(TOKEN_COOKIE)?.value;
+    return session ? JSON.parse(session) : null;
+  } catch { return null; }
+}
+
+function setTokensCookie(tokens: BcsTokens): void {
+  const cookieStore = cookies();
+  cookieStore.set(TOKEN_COOKIE, JSON.stringify(tokens), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 60 * 60 * 24 * 7, // 7 days
+  });
+}
+
+async function getValidTokens(): Promise<BcsTokens | null> {
+  const tokens = getTokensFromCookie();
+  if (!tokens) return null;
+  if (tokens.expiresAt > Date.now() + 60000) return tokens;
+  try {
+    const newTokens = await bcsClient.refreshTokens(tokens.refreshToken, CLIENT_ID, CLIENT_SECRET);
+    setTokensCookie(newTokens);
+    return newTokens;
+  } catch { return null; }
+}
+
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const action = searchParams.get('action');
+
+  if (action === 'auth-url') {
+    return NextResponse.json({ url: bcsClient.getAuthUrl(CLIENT_ID, REDIRECT_URI) });
   }
+
+  if (action === 'callback') {
+    const code = searchParams.get('code');
+    if (!code) return NextResponse.json({ error: 'No code provided' }, { status: 400 });
+    try {
+      const tokens = await bcsClient.exchangeCode(code, CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
+      setTokensCookie(tokens);
+      return NextResponse.json({ success: true });
+    } catch (e) {
+      return NextResponse.json({ error: 'Auth failed' }, { status: 401 });
+    }
+  }
+
+  if (action === 'accounts') {
+    const tokens = await getValidTokens();
+    if (!tokens) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    try {
+      const accounts = await bcsClient.getAccounts(tokens.accessToken);
+      return NextResponse.json({ accounts });
+    } catch (e) {
+      return NextResponse.json({ error: 'Failed to fetch accounts' }, { status: 500 });
+    }
+  }
+
+  if (action === 'portfolio') {
+    const accountId = searchParams.get('accountId');
+    const refresh = searchParams.get('refresh') === 'true';
+    if (!accountId) return NextResponse.json({ error: 'No accountId' }, { status: 400 });
+    const tokens = await getValidTokens();
+    if (!tokens) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    try {
+      if (refresh) bcsClient.clearCache();
+      const portfolio = await bcsClient.getPortfolio(tokens.accessToken, accountId, !refresh);
+      return NextResponse.json({ portfolio });
+    } catch (e) {
+      return NextResponse.json({ error: 'Failed to fetch portfolio' }, { status: 500 });
+    }
+  }
+
+  if (action === 'logout') {
+    const cookieStore = cookies();
+    cookieStore.delete(TOKEN_COOKIE);
+    return NextResponse.json({ success: true });
+  }
+
+  return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
 }
