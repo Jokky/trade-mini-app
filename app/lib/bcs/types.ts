@@ -3,23 +3,20 @@
  * Типы для интеграции с БКС Брокер Trade API
  */
 
-// Auth configuration
 export interface BcsAuthConfig {
   clientId: string;
   clientSecret: string;
   redirectUri: string;
-  scope: string;
+  scope?: string;
 }
 
-// Token response from OAuth
 export interface BcsTokens {
   accessToken: string;
   refreshToken: string;
-  expiresIn: number;
+  expiresAt: number; // Unix timestamp когда токен истекает
   tokenType: string;
 }
 
-// Portfolio position
 export interface BcsPosition {
   ticker: string;
   name: string;
@@ -29,12 +26,9 @@ export interface BcsPosition {
   value: number;
   pnl: number;
   pnlPercent: number;
-  currency: string;
 }
 
-// Full portfolio data
 export interface BcsPortfolio {
-  accountId: string;
   positions: BcsPosition[];
   totalValue: number;
   totalCost: number;
@@ -44,16 +38,22 @@ export interface BcsPortfolio {
   updatedAt: string;
 }
 
-// API error response
 export interface BcsApiError {
   code: string;
   message: string;
   status: number;
 }
 
-// Session stored on server
-export interface BcsSession {
-  userId: string;
-  tokens: BcsTokens;
-  expiresAt: number;
+// API Response types from БКС
+export interface BcsRawPosition {
+  symbol: string;
+  name?: string;
+  qty: number;
+  avg_price: number;
+  last_price: number;
+}
+
+export interface BcsRawPortfolioResponse {
+  positions: BcsRawPosition[];
+  currency?: string;
 }
