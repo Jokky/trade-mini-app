@@ -1,41 +1,47 @@
 /**
- * Types for order submission feature
- * Issue #15: Добавить форму подачи заявки по инструменту
+ * Order types for trading API integration
  */
 
-export type OrderDirection = 'buy' | 'sell';
 export type OrderType = 'market' | 'limit';
+export type OrderDirection = 'buy' | 'sell';
 
-export interface OrderRequest {
+export interface InstrumentInfo {
+  id: string;
+  name: string;
+  ticker: string;
+  board: string;
+  availableQuantity: number;
+}
+
+export interface CreateOrderRequest {
   board: string;
   symbol: string;
   direction: OrderDirection;
   quantity: number;
   orderType: OrderType;
-  price?: number; // Required only for limit orders
-  clientOrderId: string; // UUID v4
+  price?: number;
+  clientOrderId: string;
 }
 
 export interface OrderResponse {
-  orderId: string;
+  success: boolean;
+  orderId?: string;
   clientOrderId: string;
-  status: 'accepted' | 'rejected';
+  status?: string;
   message?: string;
+  error?: string;
 }
 
-export interface OrderStatusResponse {
-  orderId: string;
-  clientOrderId: string;
-  status: 'pending' | 'filled' | 'partially_filled' | 'cancelled' | 'rejected';
-  filledQuantity?: number;
-  remainingQuantity?: number;
-  message?: string;
+export interface OrderFormProps {
+  instrument: InstrumentInfo;
+  onSuccess: (response: OrderResponse) => void;
+  onError: (error: string) => void;
+  onClose: () => void;
 }
 
-export interface Instrument {
-  board: string;
-  symbol: string;
-  name: string;
-  quantity: number;
-  currentPrice?: number;
+export interface OrderResultProps {
+  success: boolean;
+  message: string;
+  orderId?: string;
+  onBackToPortfolio: () => void;
 }
