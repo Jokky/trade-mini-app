@@ -1,9 +1,5 @@
 /**
- * STORAGE_TOKEN_KEY
- *
- * Single source of truth for the token storage key used across the app and tests.
- * Using a constant avoids mismatches between implementation and tests.
+ * Key used to persist auth token in client storage.
+ * Exported so implementation and tests share a single source of truth.
  */
-
-/** Exported storage key for auth token */
 export const STORAGE_TOKEN_KEY = 'authToken';
