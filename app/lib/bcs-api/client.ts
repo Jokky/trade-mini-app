@@ -1,74 +1,126 @@
 /**
- * БКС Trade API Client
- * Handles authentication and portfolio fetching
+ * BCS Trade API Client
+ * Documentation: https://trade-api.bcs.ru
  */
 
-import { BCSTokens, BCSAccount, BCSPortfolio, BCSApiResult, BCSAuthConfig } from './types';
+export interface BcsTokens {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  userId: string;
+}
 
-const BCS_API_BASE = 'https://api.bcs.ru/trade/v1'; // TODO: Verify actual endpoint
+export interface BcsAccount {
+  id: string;
+  name: string;
+  type: string;
+}
 
-export class BCSApiClient {
-  private tokens: BCSTokens | null = null;
-  private config: BCSAuthConfig;
+export interface BcsPosition {
+  ticker: string;
+  name: string;
+  quantity: number;
+  currentPrice: number;
+  averagePrice: number;
+  totalValue: number;
+  profitLoss: number;
+  profitLossPercent: number;
+}
 
-  constructor(config: BCSAuthConfig) {
-    this.config = config;
-  }
+export interface BcsPortfolio {
+  accountId: string;
+  positions: BcsPosition[];
+  totalValue: number;
+  totalProfitLoss: number;
+  currency: string;
+  updatedAt: string;
+}
 
-  // TODO: Implement full OAuth2 flow per https://trade-api.bcs.ru/http/authorization
-  async authenticate(authCode: string): Promise<BCSApiResult<BCSTokens>> {
-    try {
-      // TODO: Exchange auth code for tokens
-      // POST to token endpoint with client credentials
-      throw new Error('Not implemented - see BCS API docs for OAuth2 flow');
-    } catch (error) {
-      return { success: false, error: { code: 'AUTH_ERROR', message: String(error), status: 401 } };
-    }
-  }
+const BCS_API_URL = 'https://trade-api.bcs.ru';
 
-  async refreshTokens(): Promise<BCSApiResult<BCSTokens>> {
-    // TODO: Implement token refresh using refresh_token
-    throw new Error('Not implemented');
-  }
+export class BcsApiClient {
+  private cache: Map<string, { data: BcsPortfolio; expiresAt: number }> = new Map();
+  private readonly CACHE_TTL = 30000; // 30 seconds
 
-  async getAccounts(): Promise<BCSApiResult<BCSAccount[]>> {
-    // TODO: Fetch user accounts from BCS API
-    // GET /accounts or similar endpoint
-    throw new Error('Not implemented');
-  }
-
-  async getPortfolio(accountId: string): Promise<BCSApiResult<BCSPortfolio>> {
-    // TODO: Fetch portfolio per https://trade-api.bcs.ru/http/portfolio
-    // Should include positions, balances, P&L calculations
-    throw new Error('Not implemented');
-  }
-
-  private async request<T>(endpoint: string, options?: RequestInit): Promise<T> {
-    // TODO: Add auth headers, handle token refresh on 401
-    const response = await fetch(`${BCS_API_BASE}${endpoint}`, {
-      ...options,
-      headers: {
-        'Authorization': `Bearer ${this.tokens?.accessToken}`,
-        'Content-Type': 'application/json',
-        ...options?.headers,
-      },
+  getAuthUrl(clientId: string, redirectUri: string): string {
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: 'portfolio accounts',
     });
-    if (!response.ok) throw new Error(`API Error: ${response.status}`);
-    return response.json();
+    return `${BCS_API_URL}/oauth/authorize?${params}`;
   }
 
-  setTokens(tokens: BCSTokens): void {
-    this.tokens = tokens;
+  async exchangeCode(code: string, clientId: string, clientSecret: string, redirectUri: string): Promise<BcsTokens> {
+    const res = await fetch(`${BCS_API_URL}/oauth/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
+      }),
+    });
+    if (!res.ok) throw new Error('Failed to exchange code');
+    const data = await res.json();
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      expiresAt: Date.now() + data.expires_in * 1000,
+      userId: data.user_id || 'default',
+    };
   }
 
-  isAuthenticated(): boolean {
-    return this.tokens !== null && this.tokens.expiresAt > Date.now();
+  async refreshTokens(refreshToken: string, clientId: string, clientSecret: string): Promise<BcsTokens> {
+    const res = await fetch(`${BCS_API_URL}/oauth/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: clientId,
+        client_secret: clientSecret,
+      }),
+    });
+    if (!res.ok) throw new Error('Failed to refresh token');
+    const data = await res.json();
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      expiresAt: Date.now() + data.expires_in * 1000,
+      userId: data.user_id || 'default',
+    };
+  }
+
+  async getAccounts(accessToken: string): Promise<BcsAccount[]> {
+    const res = await fetch(`${BCS_API_URL}/api/v1/accounts`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) throw new Error('Failed to fetch accounts');
+    return res.json();
+  }
+
+  async getPortfolio(accessToken: string, accountId: string, useCache = true): Promise<BcsPortfolio> {
+    const cacheKey = `portfolio:${accountId}`;
+    if (useCache) {
+      const cached = this.cache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) return cached.data;
+    }
+    const res = await fetch(`${BCS_API_URL}/api/v1/accounts/${accountId}/portfolio`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) throw new Error('Failed to fetch portfolio');
+    const data: BcsPortfolio = await res.json();
+    this.cache.set(cacheKey, { data, expiresAt: Date.now() + this.CACHE_TTL });
+    return data;
+  }
+
+  clearCache(): void {
+    this.cache.clear();
   }
 }
 
-// Singleton instance - use env vars for config
-export const bcsClient = new BCSApiClient({
-  clientId: process.env.BCS_CLIENT_ID || '',
-  clientSecret: process.env.BCS_CLIENT_SECRET || '',
-  redirectUri: process.env.BCS_REDIRECT_URI || '',
-});
+export const bcsClient = new BcsApiClient();
