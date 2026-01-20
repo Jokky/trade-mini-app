@@ -1,84 +1,106 @@
-/**
- * Backend-for-Frontend proxy для БКС Trade API
- * Решает проблемы CORS и безопасного хранения client_secret
- */
 import { NextRequest, NextResponse } from 'next/server';
 import { BcsTokens, BcsPortfolio, BcsPosition } from '@/app/lib/bcs/types';
 
-const BCS_API_URL = process.env.BCS_API_URL || 'https://api.bcs.ru';
-const BCS_OAUTH_URL = process.env.BCS_OAUTH_URL || 'https://oauth.bcs.ru';
-const CLIENT_ID = process.env.BCS_CLIENT_ID || '';
-const CLIENT_SECRET = process.env.BCS_CLIENT_SECRET || '';
+const BCS_TOKEN_URL = 'https://oauth.bcs.ru/token';
+const BCS_API_BASE = 'https://api.bcs.ru/api/v1';
+
+const getConfig = () => ({
+  clientId: process.env.BCS_CLIENT_ID || '',
+  clientSecret: process.env.BCS_CLIENT_SECRET || '',
+  redirectUri: process.env.BCS_REDIRECT_URI || '',
+});
+
+// Token storage (use Redis/DB in production)
+const tokenStore = new Map<string, { tokens: BcsTokens; expiresAt: number }>();
+
+async function exchangeCodeForTokens(code: string): Promise<BcsTokens> {
+  const config = getConfig();
+  const response = await fetch(BCS_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+      redirect_uri: config.redirectUri,
+    }),
+  });
+  if (!response.ok) throw new Error(`Token exchange failed: ${response.status}`);
+  const data = await response.json();
+  return { accessToken: data.access_token, refreshToken: data.refresh_token, expiresIn: data.expires_in, tokenType: data.token_type };
+}
+
+async function refreshAccessToken(refreshToken: string): Promise<BcsTokens> {
+  const config = getConfig();
+  const response = await fetch(BCS_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: config.clientId, client_secret: config.clientSecret }),
+  });
+  if (!response.ok) throw new Error(`Token refresh failed: ${response.status}`);
+  const data = await response.json();
+  return { accessToken: data.access_token, refreshToken: data.refresh_token, expiresIn: data.expires_in, tokenType: data.token_type };
+}
+
+async function fetchPortfolioWithRetry(userId: string): Promise<BcsPortfolio> {
+  const stored = tokenStore.get(userId);
+  if (!stored) throw new Error('Not authenticated');
+  
+  let { tokens } = stored;
+  if (Date.now() > stored.expiresAt - 60000) {
+    tokens = await refreshAccessToken(tokens.refreshToken);
+    tokenStore.set(userId, { tokens, expiresAt: Date.now() + tokens.expiresIn * 1000 });
+  }
+
+  const response = await fetch(`${BCS_API_BASE}/portfolio`, {
+    headers: { Authorization: `Bearer ${tokens.accessToken}` },
+  });
+
+  if (response.status === 401) {
+    tokens = await refreshAccessToken(tokens.refreshToken);
+    tokenStore.set(userId, { tokens, expiresAt: Date.now() + tokens.expiresIn * 1000 });
+    const retry = await fetch(`${BCS_API_BASE}/portfolio`, { headers: { Authorization: `Bearer ${tokens.accessToken}` } });
+    if (!retry.ok) throw new Error(`Portfolio fetch failed: ${retry.status}`);
+    return mapPortfolio(await retry.json());
+  }
+  if (response.status === 429) throw new Error('Rate limit exceeded. Please try again later.');
+  if (!response.ok) throw new Error(`Portfolio fetch failed: ${response.status}`);
+  return mapPortfolio(await response.json());
+}
+
+function mapPortfolio(data: any): BcsPortfolio {
+  const positions: BcsPosition[] = (data.positions || []).map((p: any) => {
+    const value = p.quantity * p.currentPrice;
+    const cost = p.quantity * p.avgPrice;
+    const pnl = value - cost;
+    return { ticker: p.ticker, name: p.name, quantity: p.quantity, avgPrice: p.avgPrice, currentPrice: p.currentPrice, value, pnl, pnlPercent: cost ? (pnl / cost) * 100 : 0, currency: p.currency || 'RUB' };
+  });
+  const totalValue = positions.reduce((sum, p) => sum + p.value, 0);
+  const totalCost = positions.reduce((sum, p) => sum + p.avgPrice * p.quantity, 0);
+  const totalPnl = totalValue - totalCost;
+  return { accountId: data.accountId || '', positions, totalValue, totalCost, totalPnl, totalPnlPercent: totalCost ? (totalPnl / totalCost) * 100 : 0, currency: 'RUB', updatedAt: new Date().toISOString() };
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { action, code, state, refreshToken, accessToken, savedState } = body;
-
-    if (action === 'exchange') {
-      // Проверка state для защиты от CSRF
-      if (!state || !savedState || state !== savedState) {
-        return NextResponse.json({ error: 'Invalid state parameter - possible CSRF attack' }, { status: 400 });
-      }
-      return await exchangeCodeForTokens(code);
+    const { action, code, userId } = await request.json();
+    if (action === 'auth' && code) {
+      const tokens = await exchangeCodeForTokens(code);
+      const id = userId || crypto.randomUUID();
+      tokenStore.set(id, { tokens, expiresAt: Date.now() + tokens.expiresIn * 1000 });
+      const res = NextResponse.json({ success: true, userId: id });
+      res.cookies.set('bcs_session', id, { httpOnly: true, secure: true, sameSite: 'strict', maxAge: 86400 });
+      return res;
     }
-
-    if (action === 'refresh') {
-      return await refreshAccessToken(refreshToken);
-    }
-
     if (action === 'portfolio') {
-      return await fetchPortfolio(accessToken);
+      const sessionId = request.cookies.get('bcs_session')?.value || userId;
+      if (!sessionId) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+      const portfolio = await fetchPortfolioWithRetry(sessionId);
+      return NextResponse.json(portfolio);
     }
-
-    return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
-  } catch (error) {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
-
-async function exchangeCodeForTokens(code: string): Promise<NextResponse> {
-  // TODO: Implement actual БКС OAuth token exchange
-  // POST to BCS_OAUTH_URL/token with client_id, client_secret, code, grant_type
-  const mockTokens: BcsTokens = {
-    accessToken: 'mock_access_token',
-    refreshToken: 'mock_refresh_token',
-    expiresAt: Date.now() + 3600000
-  };
-  return NextResponse.json(mockTokens);
-}
-
-async function refreshAccessToken(refreshToken: string): Promise<NextResponse> {
-  // TODO: Implement actual token refresh via БКС API
-  const mockTokens: BcsTokens = {
-    accessToken: 'refreshed_access_token',
-    refreshToken: refreshToken,
-    expiresAt: Date.now() + 3600000
-  };
-  return NextResponse.json(mockTokens);
-}
-
-async function fetchPortfolio(accessToken: string): Promise<NextResponse> {
-  // TODO: Implement actual БКС portfolio fetch with rate limiting handling
-  // Handle 429 errors with retryAfter header
-  const mockPosition: BcsPosition = {
-    ticker: 'SBER',
-    name: 'Сбербанк',
-    quantity: 100,
-    avgPrice: 250,
-    currentPrice: 280,
-    pnl: 3000,
-    pnlPercent: 12, // (pnl / (avgPrice * quantity)) * 100 = (3000 / 25000) * 100
-    value: 28000
-  };
-  const totalCost = mockPosition.avgPrice * mockPosition.quantity;
-  const mockPortfolio: BcsPortfolio = {
-    accountId: 'demo-account',
-    positions: [mockPosition],
-    totalValue: 28000,
-    totalPnl: 3000,
-    totalPnlPercent: (3000 / totalCost) * 100, // Правильный расчет: прибыль / затраты
-    updatedAt: new Date().toISOString()
-  };
-  return NextResponse.json(mockPortfolio);
 }
