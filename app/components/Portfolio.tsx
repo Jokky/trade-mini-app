@@ -1,108 +1,99 @@
 'use client';
-import { useState, useCallback } from 'react';
-
-interface Position {
-  ticker: string;
-  name: string;
-  quantity: number;
-  currentPrice: number;
-  totalValue: number;
-  pnl: number;
-}
-
-interface Account {
-  id: string;
-  name: string;
-}
-
-type Status = 'idle' | 'auth' | 'loading' | 'ready' | 'error';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import type { BcsAccount, BcsPortfolio } from '@/app/lib/bcs-api/client';
 
 export default function Portfolio() {
-  const [status, setStatus] = useState<Status>('idle');
-  const [error, setError] = useState('');
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [selectedAccount, setSelectedAccount] = useState('');
-  const [positions, setPositions] = useState<Position[]>([]);
-
-  const api = async (action: string, extra = {}) => {
-    const res = await fetch('/api/bcs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, ...extra }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Ошибка запроса');
-    return data;
-  };
+  const [accounts, setAccounts] = useState<BcsAccount[]>([]);
+  const [selectedAccount, setSelectedAccount] = useState<string>('');
+  const [portfolio, setPortfolio] = useState<BcsPortfolio | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isAuthed, setIsAuthed] = useState(false);
+  const touchStartY = useRef(0);
 
   const handleAuth = async () => {
-    const code = prompt('Введите код авторизации БКС:');
-    if (!code) return;
-    setStatus('auth');
-    setError('');
-    try {
-      await api('auth', { code });
-      const accs = await api('accounts');
-      setAccounts(accs.accounts || []);
-      setStatus('ready');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ошибка авторизации');
-      setStatus('error');
-    }
+    const res = await fetch('/api/bcs?action=auth-url');
+    const { url } = await res.json();
+    window.location.href = url;
   };
 
-  const loadPortfolio = useCallback(async (accountId: string) => {
-    setStatus('loading');
-    setError('');
+  const loadAccounts = useCallback(async () => {
+    setLoading(true);
     try {
-      const data = await api('portfolio', { accountId });
-      setPositions(data.positions || []);
-      setStatus('ready');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ошибка загрузки портфеля');
-      setStatus('error');
-    }
+      const res = await fetch('/api/bcs?action=accounts');
+      if (res.status === 401) { setIsAuthed(false); return; }
+      const { accounts } = await res.json();
+      setAccounts(accounts || []);
+      setIsAuthed(true);
+      if (accounts?.length) setSelectedAccount(accounts[0].id);
+    } catch { setError('Не удалось загрузить счета'); }
+    setLoading(false);
   }, []);
 
-  const handleAccountChange = (id: string) => {
-    setSelectedAccount(id);
-    if (id) loadPortfolio(id);
+  const loadPortfolio = useCallback(async (refresh = false) => {
+    if (!selectedAccount) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/bcs?action=portfolio&accountId=${selectedAccount}&refresh=${refresh}`);
+      if (res.status === 401) { setIsAuthed(false); return; }
+      if (!res.ok) throw new Error();
+      const { portfolio } = await res.json();
+      setPortfolio(portfolio);
+    } catch { setError('Не удалось загрузить портфель'); }
+    setLoading(false);
+  }, [selectedAccount]);
+
+  useEffect(() => { loadAccounts(); }, [loadAccounts]);
+  useEffect(() => { if (selectedAccount) loadPortfolio(); }, [selectedAccount, loadPortfolio]);
+
+  const handleTouchStart = (e: React.TouchEvent) => { touchStartY.current = e.touches[0].clientY; };
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const delta = e.changedTouches[0].clientY - touchStartY.current;
+    if (delta > 80 && window.scrollY === 0) loadPortfolio(true);
   };
 
-  const totalValue = positions.reduce((s, p) => s + p.totalValue, 0);
-  const totalPnl = positions.reduce((s, p) => s + p.pnl, 0);
+  if (!isAuthed) {
+    return (
+      <div className="p-4 text-center">
+        <p className="mb-4">Требуется авторизация в БКС</p>
+        <button onClick={handleAuth} className="bg-blue-600 text-white px-4 py-2 rounded">Войти через БКС</button>
+        {error && <p className="mt-2 text-red-500">{error}</p>}
+      </div>
+    );
+  }
 
   return (
-    <div className="p-4 max-w-xl mx-auto">
-      <h1 className="text-xl font-bold mb-4">Портфель БКС</h1>
-      
-      {status === 'idle' && <button onClick={handleAuth} className="bg-blue-600 text-white px-4 py-2 rounded">Авторизоваться в БКС</button>}
-      {status === 'error' && <div className="text-red-500 mb-2">{error} <button onClick={handleAuth} className="underline ml-2">Повторить</button></div>}
-      {(status === 'auth' || status === 'loading') && <div>Загрузка...</div>}
-      
-      {accounts.length > 0 && (
-        <select value={selectedAccount} onChange={e => handleAccountChange(e.target.value)} className="border p-2 rounded w-full mb-4">
-          <option value="">Выберите счет</option>
+    <div className="p-4" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+      <div className="flex justify-between items-center mb-4">
+        <select value={selectedAccount} onChange={e => setSelectedAccount(e.target.value)} className="border p-2 rounded">
           {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
-      )}
-      
-      {selectedAccount && status === 'ready' && (
+        <button onClick={() => loadPortfolio(true)} disabled={loading} className="bg-blue-600 text-white px-3 py-1 rounded">
+          {loading ? '...' : 'Обновить'}
+        </button>
+      </div>
+      {error && <p className="text-red-500 mb-4">{error}</p>}
+      {portfolio && (
         <>
-          <button onClick={() => loadPortfolio(selectedAccount)} className="mb-4 text-blue-600 underline">Обновить</button>
-          {positions.length === 0 ? <p>Портфель пуст</p> : (
-            <div className="space-y-2">
-              {positions.map(p => (
-                <div key={p.ticker} className="border p-2 rounded flex justify-between">
-                  <div><div className="font-semibold">{p.ticker}</div><div className="text-sm text-gray-500">{p.name}</div></div>
-                  <div className="text-right"><div>{p.quantity} × {p.currentPrice.toFixed(2)}</div><div className={p.pnl >= 0 ? 'text-green-600' : 'text-red-600'}>{p.pnl >= 0 ? '+' : ''}{p.pnl.toFixed(2)}</div></div>
-                </div>
+          <div className="bg-gray-100 p-3 rounded mb-4">
+            <p className="text-lg font-bold">{portfolio.totalValue.toLocaleString()} {portfolio.currency}</p>
+            <p className={portfolio.totalProfitLoss >= 0 ? 'text-green-600' : 'text-red-600'}>
+              {portfolio.totalProfitLoss >= 0 ? '+' : ''}{portfolio.totalProfitLoss.toLocaleString()} {portfolio.currency}
+            </p>
+          </div>
+          {portfolio.positions.length === 0 ? <p className="text-gray-500">Портфель пуст</p> : (
+            <ul className="space-y-2">
+              {portfolio.positions.map(p => (
+                <li key={p.ticker} className="border p-3 rounded">
+                  <div className="flex justify-between"><span className="font-medium">{p.ticker}</span><span>{p.totalValue.toLocaleString()}</span></div>
+                  <div className="text-sm text-gray-600">{p.name} • {p.quantity} шт</div>
+                  <div className={`text-sm ${p.profitLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {p.profitLoss >= 0 ? '+' : ''}{p.profitLoss.toLocaleString()} ({p.profitLossPercent.toFixed(2)}%)
+                  </div>
+                </li>
               ))}
-              <div className="border-t pt-2 flex justify-between font-bold">
-                <span>Итого:</span>
-                <span>{totalValue.toFixed(2)} (<span className={totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}>{totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)}</span>)</span>
-              </div>
-            </div>
+            </ul>
           )}
         </>
       )}
