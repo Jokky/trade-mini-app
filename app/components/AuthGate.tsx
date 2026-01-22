@@ -1,5 +1,8 @@
+'use client';
+
 import React, { useEffect, useState } from 'react';
 import { getToken, saveToken, removeToken } from '../services/authStorage';
+import Portfolio from './Portfolio';
 
 /**
  * Minimal AuthGate component
@@ -35,28 +38,33 @@ export const AuthGate: React.FC = () => {
   }, []);
 
   if (loading) {
-    // Prevent flashing wrong UI while async storage read is in progress
-    return <div>Loading...</div>;
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="text-gray-500">Загрузка...</div>
+      </div>
+    );
   }
 
   if (showPortfolio) {
     return (
-      <div>
-        <h2>Portfolio</h2>
-        <p>(Portfolio UI placeholder)</p>
-        <button
-          onClick={async () => {
-            try {
-              await removeToken();
-              setShowPortfolio(false);
-            } catch (e) {
-              // Swallow; in real app surface localized error
-              console.error('Logout failed', e);
-            }
-          }}
-        >
-          Logout (remove token)
-        </button>
+      <div className="min-h-screen bg-gray-100">
+        <div className="bg-white shadow-sm p-4 flex justify-between items-center">
+          <h1 className="text-xl font-bold">Портфель</h1>
+          <button
+            onClick={async () => {
+              try {
+                await removeToken();
+                setShowPortfolio(false);
+              } catch (e) {
+                console.error('Logout failed', e);
+              }
+            }}
+            className="text-red-500 text-sm"
+          >
+            Выйти
+          </button>
+        </div>
+        <Portfolio />
       </div>
     );
   }
@@ -73,38 +81,51 @@ const AddTokenForm: React.FC<{ storageError: string | null; onSaved: () => void 
   const [error, setError] = useState<string | null>(null);
 
   return (
-    <div>
-      <h2>Add Token</h2>
-      {storageError && <div style={{ color: 'red' }}>Storage error: {storageError}. Falling back to token form.</div>}
-      <input
-        aria-label="auth-token"
-        value={token}
-        onChange={(e) => setToken(e.target.value)}
-        placeholder="Paste your token"
-      />
-      <button
-        onClick={async () => {
-          setError(null);
-          if (!token || token.trim() === '') {
-            setError('Token must be a non-empty string');
-            return;
-          }
-          setSaving(true);
-          try {
-            await saveToken(token.trim());
-            onSaved();
-          } catch (e) {
-            console.error('Failed to save token', e);
-            setError((e as Error).message || 'save-failed');
-          } finally {
-            setSaving(false);
-          }
-        }}
-        disabled={saving}
-      >
-        Save
-      </button>
-      {error && <div style={{ color: 'red' }}>{error}</div>}
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-lg">
+        <h2 className="text-2xl font-bold mb-2 text-center">Добавить токен</h2>
+        <p className="text-gray-500 text-center mb-6">Введите ваш API токен для доступа к торговле</p>
+        {storageError && (
+          <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm">
+            Ошибка хранилища: {storageError}
+          </div>
+        )}
+        <input
+          aria-label="auth-token"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          placeholder="Вставьте ваш токен"
+          className="w-full p-3 border rounded-lg mb-4"
+        />
+        <button
+          onClick={async () => {
+            setError(null);
+            if (!token || token.trim() === '') {
+              setError('Токен не может быть пустым');
+              return;
+            }
+            setSaving(true);
+            try {
+              await saveToken(token.trim());
+              onSaved();
+            } catch (e) {
+              console.error('Failed to save token', e);
+              setError((e as Error).message || 'Ошибка сохранения');
+            } finally {
+              setSaving(false);
+            }
+          }}
+          disabled={saving}
+          className="w-full py-3 bg-blue-500 text-white rounded-lg font-medium disabled:opacity-50"
+        >
+          {saving ? 'Сохранение...' : 'Сохранить'}
+        </button>
+        {error && (
+          <div className="bg-red-50 text-red-600 p-3 rounded-lg mt-4 text-sm">
+            {error}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

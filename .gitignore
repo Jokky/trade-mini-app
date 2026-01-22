@@ -9,6 +9,9 @@ npm-debug.log
 # env
 .env*
 
+# Next.js
+.next
+
 /dist
 /cjs
 .cache
