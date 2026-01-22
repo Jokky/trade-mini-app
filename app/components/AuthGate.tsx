@@ -65,6 +65,30 @@ export const AuthGate: React.FC = () => {
         >
           Портфель
         </Cell>
+        <div style={{ display: 'flex', gap: '8px', padding: '12px', overflowX: 'auto' }}>
+          <Button
+            mode="filled"
+            size="s"
+            onClick={() => {
+              if (typeof window !== 'undefined') {
+                window.location.href = '/';
+              }
+            }}
+          >
+            Портфель
+          </Button>
+          <Button
+            mode="outline"
+            size="s"
+            onClick={() => {
+              if (typeof window !== 'undefined') {
+                window.location.href = '/instruments';
+              }
+            }}
+          >
+            Инструменты
+          </Button>
+        </div>
         <Portfolio />
       </div>
     );
