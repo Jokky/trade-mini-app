@@ -96,7 +96,7 @@ const AddTokenForm: React.FC<{ storageError: string | null; onSaved: () => void 
         body: JSON.stringify({
           action: 'authenticate',
           refreshToken: token.trim(),
-          clientId: 'trade-api-read',
+          clientId: 'trade-api-write',
         }),
       });
       const data = await response.json();

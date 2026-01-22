@@ -97,7 +97,7 @@ const CACHE_TTL = 30000; // 30 seconds
 
 export type ClientId = 'trade-api-read' | 'trade-api-write';
 
-export async function authenticate(refreshToken: string, clientId: ClientId = 'trade-api-read'): Promise<BCSTokens> {
+export async function authenticate(refreshToken: string, clientId: ClientId = 'trade-api-write'): Promise<BCSTokens> {
   const body = new URLSearchParams({
     client_id: clientId,
     refresh_token: refreshToken,
@@ -125,7 +125,7 @@ export async function authenticate(refreshToken: string, clientId: ClientId = 't
   return cachedTokens;
 }
 
-export async function refreshAccessToken(clientId: ClientId = 'trade-api-read'): Promise<BCSTokens> {
+export async function refreshAccessToken(clientId: ClientId = 'trade-api-write'): Promise<BCSTokens> {
   if (!cachedTokens?.refreshToken) throw new Error('No refresh token available');
 
   const body = new URLSearchParams({
@@ -218,7 +218,7 @@ export async function cancelOrder(originalClientOrderId: string, clientOrderId: 
   return response.json();
 }
 
-async function ensureValidToken(clientId: ClientId = 'trade-api-read'): Promise<BCSTokens> {
+async function ensureValidToken(clientId: ClientId = 'trade-api-write'): Promise<BCSTokens> {
   if (!cachedTokens) throw new Error('Not authenticated');
   if (Date.now() >= cachedTokens.expiresAt - 60000) {
     return refreshAccessToken(clientId);

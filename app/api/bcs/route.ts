@@ -7,7 +7,7 @@ export async function POST(request: NextRequest) {
 
     switch (action) {
       case 'authenticate': {
-        const clientId = params.clientId || 'trade-api-read';
+        const clientId = params.clientId || 'trade-api-write';
         const tokens = await bcsClient.authenticate(params.refreshToken, clientId);
         return NextResponse.json({
           success: true,
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, data: portfolio });
       }
       case 'refresh': {
-        const clientId = params.clientId || 'trade-api-read';
+        const clientId = params.clientId || 'trade-api-write';
         await bcsClient.refreshAccessToken(clientId);
         return NextResponse.json({ success: true });
       }
