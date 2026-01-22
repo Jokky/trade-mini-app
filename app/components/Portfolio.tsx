@@ -16,6 +16,7 @@ interface BCSPortfolioItem {
   unrealizedPL: number;
   unrealizedPercentPL: number;
   board: string;
+  term: 'T0' | 'T1' | 'T2' | 'T365';
 }
 
 interface SelectedInstrument {
@@ -40,9 +41,9 @@ export default function Portfolio() {
       });
       const data = await res.json();
       if (data.success) {
-        // Filter only depoLimit positions (stocks, bonds, etc.)
+        // Filter only depoLimit positions with term T365 (long-term securities)
         const depoPositions = (data.data || []).filter(
-          (item: BCSPortfolioItem) => item.type === 'depoLimit' && item.quantity > 0
+          (item: BCSPortfolioItem) => item.type === 'depoLimit' && item.quantity > 0 && item.term === 'T365'
         );
         setPositions(depoPositions);
       } else {
