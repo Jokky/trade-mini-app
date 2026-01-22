@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import OrderForm from './OrderForm';
 import { usePortfolioPolling } from '../hooks/usePortfolioPolling';
 import { BCSPortfolioItem } from '../lib/bcs-api/client';
+import { Cell, Placeholder } from '@telegram-apps/telegram-ui';
 
 interface SelectedInstrument {
   ticker: string;
@@ -32,43 +33,62 @@ export default function Portfolio() {
     });
   };
 
-  if (error) return <div className="p-4 text-red-500">{error}</div>;
+  if (error) {
+    return (
+      <div>
+        <div style={{
+          padding: '12px',
+          margin: '16px',
+          backgroundColor: 'var(--tgui--destructive_bg_color)',
+          color: 'var(--tgui--destructive_text_color)',
+          borderRadius: '8px',
+          fontSize: '14px'
+        }}>
+          {error}
+        </div>
+      </div>
+    );
+  }
 
-  if (isLoading) return <div className="p-4">Загрузка...</div>;
+  if (isLoading) {
+    return <Placeholder header="Загрузка..." />;
+  }
 
   return (
-    <div className="p-4">
-      <div className="space-y-2">
-        {positions.map((pos) => (
-          <div
+    <div>
+      {positions.length === 0 ? (
+        <Placeholder header="Портфель пуст" />
+      ) : (
+        positions.map((pos) => (
+          <Cell
             key={`${pos.ticker}-${pos.board}`}
             onClick={() => handlePositionClick(pos)}
-            className="p-4 bg-white rounded-lg shadow cursor-pointer hover:bg-gray-50"
-          >
-            <div className="flex justify-between">
-              <div>
-                <div className="font-medium">{pos.displayName}</div>
-                <div className="text-sm text-gray-500">
-                  {pos.ticker} · {pos.quantity} шт.
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="font-medium">
+            subtitle={`${pos.ticker} · ${pos.quantity} шт.`}
+            after={
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontWeight: '500', marginBottom: '4px' }}>
                   {(pos.currentValueRub ?? 0).toLocaleString('ru-RU')} ₽
                 </div>
-                <div className={pos.unrealizedPL >= 0 ? 'text-green-500' : 'text-red-500'}>
+                <div
+                  style={{
+                    color:
+                      pos.unrealizedPL >= 0
+                        ? 'var(--tgui--button_positive_bg_color)'
+                        : 'var(--tgui--destructive_text_color)',
+                    fontSize: '14px',
+                  }}
+                >
                   {pos.unrealizedPL >= 0 ? '+' : ''}
                   {(pos.unrealizedPL ?? 0).toLocaleString('ru-RU')} ₽ (
                   {(pos.unrealizedPercentPL ?? 0).toFixed(2)}%)
                 </div>
               </div>
-            </div>
-          </div>
-        ))}
-        {positions.length === 0 && (
-          <div className="text-gray-500 text-center py-8">Портфель пуст</div>
-        )}
-      </div>
+            }
+          >
+            {pos.displayName}
+          </Cell>
+        ))
+      )}
       {selectedInstrument && (
         <OrderForm
           ticker={selectedInstrument.ticker}
