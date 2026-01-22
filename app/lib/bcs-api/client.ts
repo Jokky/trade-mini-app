@@ -90,6 +90,7 @@ const BCS_AUTH_URL = 'https://be.broker.ru/trade-api-keycloak/realms/tradeapi/pr
 const BCS_PORTFOLIO_URL = 'https://be.broker.ru/trade-api-bff-portfolio/api/v1/portfolio';
 const BCS_ORDERS_URL = 'https://be.broker.ru/trade-api-bff-operations/api/v1/orders';
 const BCS_ORDERS_SEARCH_URL = 'https://be.broker.ru/trade-api-bff-order-details/api/v1/orders/search';
+const BCS_INFORMATION_URL = 'https://be.broker.ru/trade-api-information-service/api/v1/instruments';
 
 let cachedTokens: BCSTokens | null = null;
 let portfolioCache: { data: BCSPortfolioItem[]; timestamp: number } | null = null;
@@ -173,14 +174,35 @@ export async function getPortfolio(forceRefresh = false): Promise<BCSPortfolioIt
 }
 
 export async function createOrder(request: CreateOrderRequest): Promise<CreateOrderResponse> {
+  // Валидация: для лимитных заявок (orderType === '2') цена обязательна
+  if (request.orderType === '2' && (!request.price || request.price <= 0)) {
+    throw new Error('Для лимитной заявки необходимо указать цену');
+  }
+
   const tokens = await ensureValidToken('trade-api-write');
+  
+  // Создаем объект запроса, исключая undefined поля
+  const requestBody: any = {
+    clientOrderId: request.clientOrderId,
+    side: request.side,
+    orderType: request.orderType,
+    orderQuantity: request.orderQuantity,
+    ticker: request.ticker,
+    classCode: request.classCode,
+  };
+
+  // Для лимитных заявок добавляем цену
+  if (request.orderType === '2' && request.price) {
+    requestBody.price = request.price;
+  }
+
   const response = await fetch(BCS_ORDERS_URL, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${tokens.accessToken}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(request),
+    body: JSON.stringify(requestBody),
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
@@ -232,4 +254,75 @@ export async function getAccessToken(clientId: ClientId = 'trade-api-write'): Pr
 
 export function setTokens(tokens: BCSTokens): void {
   cachedTokens = tokens;
+}
+
+export type InstrumentType = 
+  | 'CURRENCY' 
+  | 'STOCK' 
+  | 'FOREIGN_STOCK' 
+  | 'BONDS' 
+  | 'NOTES' 
+  | 'DEPOSITARY_RECEIPTS' 
+  | 'EURO_BONDS' 
+  | 'MUTUAL_FUNDS' 
+  | 'ETF' 
+  | 'FUTURES' 
+  | 'OPTIONS' 
+  | 'GOODS' 
+  | 'INDICES';
+
+export interface BoardAndExchange {
+  classCode: string;
+  exchange: string;
+}
+
+export interface Instrument {
+  ticker: string;
+  boards: BoardAndExchange[];
+  shortName?: string;
+  displayName?: string;
+  type?: InstrumentType;
+  isin?: string;
+  registrationCode?: string;
+  issuerName?: string;
+  tradingCurrency?: string;
+  faceValue?: number;
+  scale?: number;
+  minimumStep?: number;
+  primaryBoard?: string;
+  secondaryBoards?: string[];
+  [key: string]: any; // для остальных полей
+}
+
+export interface GetInstrumentsParams {
+  type: InstrumentType;
+  baseAssetTicker?: string;
+  size?: number;
+  page?: number;
+}
+
+export async function getInstruments(params: GetInstrumentsParams): Promise<Instrument[]> {
+  const tokens = await ensureValidToken();
+  const { type, baseAssetTicker, size = 50, page = 0 } = params;
+  
+  const queryParams = new URLSearchParams({
+    type,
+    size: size.toString(),
+    page: page.toString(),
+  });
+  
+  if (baseAssetTicker) {
+    queryParams.append('baseAssetTicker', baseAssetTicker);
+  }
+  
+  const response = await fetch(`${BCS_INFORMATION_URL}/by-type?${queryParams.toString()}`, {
+    headers: { Authorization: `Bearer ${tokens.accessToken}` },
+  });
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.type || 'Failed to fetch instruments');
+  }
+  
+  return response.json();
 }

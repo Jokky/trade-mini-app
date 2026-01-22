@@ -57,8 +57,14 @@ export async function POST(request: NextRequest) {
           orderQuantity: params.orderQuantity,
           ticker: params.ticker,
           classCode: params.classCode,
-          price: params.price,
-        });
+        };
+
+        // Для лимитных заявок добавляем цену, для рыночных - не передаем
+        if (params.orderType === '2' && params.price) {
+          orderRequest.price = params.price;
+        }
+
+        const response = await bcsClient.createOrder(orderRequest);
         return NextResponse.json({ success: true, data: response });
       }
       case 'orderStatus': {
@@ -80,6 +86,15 @@ export async function POST(request: NextRequest) {
         await bcsClient.authenticate(params.refreshToken, clientId);
         const response = await bcsClient.cancelOrder(params.originalClientOrderId, params.clientOrderId);
         return NextResponse.json({ success: true, data: response });
+      }
+      case 'getInstruments': {
+        const instruments = await bcsClient.getInstruments({
+          type: params.type,
+          baseAssetTicker: params.baseAssetTicker,
+          size: params.size,
+          page: params.page,
+        });
+        return NextResponse.json({ success: true, data: instruments });
       }
       default:
         return NextResponse.json({ success: false, error: 'Unknown action' }, { status: 400 });

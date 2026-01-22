@@ -57,6 +57,26 @@ export async function createOrder(request: CreateOrderRequest): Promise<CreateOr
   const clientOrderId = generateUUID();
   const refreshToken = await getRefreshToken();
 
+  // Валидация: для лимитных заявок цена обязательна
+  if (request.type === 'limit' && (!request.price || request.price <= 0)) {
+    throw new Error('Для лимитной заявки необходимо указать цену');
+  }
+
+  const body: any = {
+    action: 'createOrder',
+    clientOrderId,
+    side: request.side === 'buy' ? '1' : '2',
+    orderType: request.type === 'market' ? '1' : '2',
+    orderQuantity: request.quantity,
+    ticker: request.ticker,
+    classCode: request.classCode,
+  };
+
+  // Для лимитных заявок цена обязательна, для рыночных - не передаем
+  if (request.type === 'limit' && request.price) {
+    body.price = request.price;
+  }
+
   const response = await fetch('/api/bcs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
