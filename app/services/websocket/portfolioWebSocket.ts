@@ -21,7 +21,7 @@ export class PortfolioWebSocketService {
     if (this.ws?.readyState === WebSocket.OPEN) return;
     
     this.setState('connecting');
-    this.ws = new WebSocket(`${this.config.url}?token=${this.config.token}`);
+    this.ws = new WebSocket(this.config.url, [`Bearer-${this.config.token}`]);
     
     this.ws.onopen = () => {
       this.setState('connected');
