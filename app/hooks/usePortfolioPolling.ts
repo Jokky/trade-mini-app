@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { BCSPortfolioItem } from '../lib/bcs-api/client';
+import { getToken } from '../services/authStorage';
 
 interface UsePortfolioPollingResult {
   positions: BCSPortfolioItem[];
@@ -25,10 +26,20 @@ export function usePortfolioPolling(): UsePortfolioPollingResult {
   const fetchPortfolio = useCallback(async (forceRefresh = false) => {
     try {
       setError(null);
+      const refreshToken = await getToken();
+      if (!refreshToken) {
+        setError('Токен не найден. Пожалуйста, войдите в систему.');
+        setIsLoading(false);
+        return;
+      }
       const res = await fetch('/api/bcs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'portfolio', forceRefresh }),
+        body: JSON.stringify({ 
+          action: 'portfolio', 
+          refreshToken,
+          forceRefresh 
+        }),
       });
       const data = await res.json();
       if (data.success) {

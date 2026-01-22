@@ -1,3 +1,5 @@
+import { getToken } from './authStorage';
+
 export interface CreateOrderRequest {
   ticker: string;
   classCode: string;
@@ -43,14 +45,24 @@ function generateUUID(): string {
   });
 }
 
+async function getRefreshToken(): Promise<string> {
+  const token = await getToken();
+  if (!token) {
+    throw new Error('Токен не найден. Пожалуйста, войдите в систему.');
+  }
+  return token;
+}
+
 export async function createOrder(request: CreateOrderRequest): Promise<CreateOrderResponse> {
   const clientOrderId = generateUUID();
+  const refreshToken = await getRefreshToken();
 
   const response = await fetch('/api/bcs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       action: 'createOrder',
+      refreshToken,
       clientOrderId,
       side: request.side === 'buy' ? '1' : '2',
       orderType: request.type === 'market' ? '1' : '2',
@@ -67,10 +79,16 @@ export async function createOrder(request: CreateOrderRequest): Promise<CreateOr
 }
 
 export async function getOrderStatus(originalClientOrderId: string): Promise<OrderStatusResponse> {
+  const refreshToken = await getRefreshToken();
+
   const response = await fetch('/api/bcs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'orderStatus', originalClientOrderId }),
+    body: JSON.stringify({ 
+      action: 'orderStatus', 
+      refreshToken,
+      originalClientOrderId 
+    }),
   });
 
   const data = await response.json();
@@ -80,11 +98,17 @@ export async function getOrderStatus(originalClientOrderId: string): Promise<Ord
 
 export async function cancelOrder(originalClientOrderId: string): Promise<CreateOrderResponse> {
   const clientOrderId = generateUUID();
+  const refreshToken = await getRefreshToken();
 
   const response = await fetch('/api/bcs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'cancelOrder', originalClientOrderId, clientOrderId }),
+    body: JSON.stringify({ 
+      action: 'cancelOrder', 
+      refreshToken,
+      originalClientOrderId, 
+      clientOrderId 
+    }),
   });
 
   const data = await response.json();
