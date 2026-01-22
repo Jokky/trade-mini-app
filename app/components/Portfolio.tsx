@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import React, { useState, useMemo } from 'react';
-import OrderForm from './OrderForm';
-import { usePortfolioPolling } from '../hooks/usePortfolioPolling';
-import { BCSPortfolioItem } from '../lib/bcs-api/client';
-import { Cell, Placeholder } from '@telegram-apps/telegram-ui';
+import React, { useState, useMemo } from "react";
+import OrderForm from "./OrderForm";
+import { usePortfolioPolling } from "../hooks/usePortfolioPolling";
+import { BCSPortfolioItem } from "../lib/bcs-api/client";
+import { Cell, Placeholder } from "@telegram-apps/telegram-ui";
 
 interface SelectedInstrument {
   ticker: string;
@@ -13,7 +13,8 @@ interface SelectedInstrument {
 }
 
 export default function Portfolio() {
-  const [selectedInstrument, setSelectedInstrument] = useState<SelectedInstrument | null>(null);
+  const [selectedInstrument, setSelectedInstrument] =
+    useState<SelectedInstrument | null>(null);
 
   // Poll portfolio data via HTTP every 5 seconds
   const { positions: allPositions, isLoading, error } = usePortfolioPolling();
@@ -21,7 +22,7 @@ export default function Portfolio() {
   // Filter only positions with term T365
   const positions = useMemo(() => {
     return allPositions.filter(
-      (item: BCSPortfolioItem) => item.term === 'T365'
+      (item: BCSPortfolioItem) => item.term === "T365"
     );
   }, [allPositions]);
 
@@ -36,21 +37,21 @@ export default function Portfolio() {
   if (error) {
     return (
       <div>
-        <div style={{
-          padding: '12px',
-          margin: '16px',
-          backgroundColor: 'var(--tgui--destructive_bg_color)',
-          color: 'var(--tgui--destructive_text_color)',
-          borderRadius: '8px',
-          fontSize: '14px'
-        }}>
+        <div
+          style={{
+            padding: "12px",
+            margin: "16px",
+            backgroundColor: "var(--tgui--destructive_bg_color)",
+            color: "var(--tgui--destructive_text_color)",
+            borderRadius: "8px",
+            fontSize: "14px",
+          }}
+        >
           {error}
         </div>
       </div>
     );
   }
-
-  const isLoading = !accessToken || (connectionState === 'connecting' && positions.length === 0);
 
   if (isLoading) {
     return <Placeholder header="Загрузка..." />;
@@ -67,21 +68,21 @@ export default function Portfolio() {
             onClick={() => handlePositionClick(pos)}
             subtitle={`${pos.ticker} · ${pos.quantity} шт.`}
             after={
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontWeight: '500', marginBottom: '4px' }}>
-                  {(pos.currentValueRub ?? 0).toLocaleString('ru-RU')} ₽
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontWeight: "500", marginBottom: "4px" }}>
+                  {(pos.currentValueRub ?? 0).toLocaleString("ru-RU")} ₽
                 </div>
                 <div
                   style={{
                     color:
                       pos.unrealizedPL >= 0
-                        ? 'var(--tgui--button_positive_bg_color)'
-                        : 'var(--tgui--destructive_text_color)',
-                    fontSize: '14px',
+                        ? "var(--tgui--button_positive_bg_color)"
+                        : "var(--tgui--destructive_text_color)",
+                    fontSize: "14px",
                   }}
                 >
-                  {pos.unrealizedPL >= 0 ? '+' : ''}
-                  {(pos.unrealizedPL ?? 0).toLocaleString('ru-RU')} ₽ (
+                  {pos.unrealizedPL >= 0 ? "+" : ""}
+                  {(pos.unrealizedPL ?? 0).toLocaleString("ru-RU")} ₽ (
                   {(pos.unrealizedPercentPL ?? 0).toFixed(2)}%)
                 </div>
               </div>
@@ -98,7 +99,7 @@ export default function Portfolio() {
           instrumentName={selectedInstrument.name}
           onClose={() => setSelectedInstrument(null)}
           onSuccess={() => setSelectedInstrument(null)}
-          onError={(err) => console.error('Order error:', err)}
+          onError={(err) => console.error("Order error:", err)}
         />
       )}
     </div>
