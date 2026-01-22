@@ -58,7 +58,7 @@ export default function OrderForm({
 
   if (result) {
     return (
-      <Modal open={true} onClose={onClose}>
+      <Modal open={true}>
         <div style={{ padding: '24px', textAlign: 'center' }}>
           <div style={{ fontSize: '48px', marginBottom: '16px', color: result.success ? 'var(--tgui--link_color)' : 'var(--tgui--destructive_text_color)' }}>
             {result.success ? '✓' : '✗'}
@@ -78,7 +78,7 @@ export default function OrderForm({
   }
 
   return (
-    <Modal open={true} onClose={onClose}>
+    <Modal open={true}>
       <div style={{ padding: '16px' }}>
         <Cell
           before={<div />}
