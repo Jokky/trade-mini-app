@@ -10,37 +10,89 @@ export interface BCSTokens {
   refreshExpiresAt: number;
 }
 
-export interface PortfolioPosition {
+export interface BCSPortfolioItem {
+  type: 'moneyLimit' | 'depoLimit' | 'futuresLimit' | 'futuresHolding' | 'otcLimit';
+  account: string;
+  exchange: string;
   ticker: string;
-  name: string;
-  quantity: number;
-  currentPrice: number;
-  avgPrice: number;
-  totalValue: number;
-  profitLoss: number;
-  profitLossPercent: number;
-}
-
-export interface Portfolio {
-  accountId: string;
-  positions: PortfolioPosition[];
-  totalValue: number;
-  totalProfitLoss: number;
+  displayName: string;
   currency: string;
-  updatedAt: string;
+  upperType: 'CURRENCY' | 'RUSSIA' | 'FOREIGN' | 'OTC';
+  instrumentType: string;
+  term: 'T0' | 'T1' | 'T2' | 'T365';
+  quantity: number;
+  locked: number;
+  balancePrice: number;
+  currentPrice: number;
+  balanceValue: number;
+  balanceValueRub: number;
+  currentValue: number;
+  currentValueRub: number;
+  unrealizedPL: number;
+  unrealizedPercentPL: number;
+  dailyPL: number;
+  dailyPercentPL: number;
+  portfolioShare: number;
+  scale: number;
+  minimumStep: number;
+  board: string;
+  priceUnit: string;
+  faceValue?: number;
+  accruedIncome?: number;
+  logoLink?: string;
+  isBlocked: boolean;
+  isBlockedTradeAccount: boolean;
+  ratioQuantity: number;
 }
 
-export interface BCSAccount {
-  id: string;
-  name: string;
-  type: string;
+export interface CreateOrderRequest {
+  clientOrderId: string;
+  side: '1' | '2'; // 1 = buy, 2 = sell
+  orderType: '1' | '2'; // 1 = market, 2 = limit
+  orderQuantity: number;
+  ticker: string;
+  classCode: string;
+  price?: number;
+}
+
+export interface CreateOrderResponse {
+  clientOrderId: string;
+  status: string;
+}
+
+export interface OrderData {
+  messageType?: string;
+  orderStatus: '0' | '1' | '2' | '4' | '5' | '6' | '8' | '9' | '10';
+  executionType?: string;
+  orderQuantity: number;
+  executedQuantity: number;
+  remainedQuantity: number;
+  ticker: string;
+  classCode: string;
+  side: '1' | '2';
+  orderType: '1' | '2';
+  averagePrice?: number;
+  orderId: string;
+  price?: number;
+  currency?: string;
+  transactionTime?: string;
+  tradeDate?: string;
+  orderNumber?: string;
+}
+
+export interface OrderStatusResponse {
+  clientOrderId: string;
+  originalClientOrderId: string;
+  data: OrderData;
 }
 
 const BCS_AUTH_URL = 'https://be.broker.ru/trade-api-keycloak/realms/tradeapi/protocol/openid-connect/token';
-const BCS_API_BASE = 'https://api.bcs.ru/trade/v1';
+const BCS_PORTFOLIO_URL = 'https://be.broker.ru/trade-api-bff-portfolio/api/v1/portfolio';
+const BCS_ORDERS_URL = 'https://be.broker.ru/trade-api-bff-operations/api/v1/orders';
+const BCS_ORDERS_SEARCH_URL = 'https://be.broker.ru/trade-api-bff-order-details/api/v1/orders/search';
 
 let cachedTokens: BCSTokens | null = null;
-let portfolioCache: { data: Portfolio; timestamp: number } | null = null;
+let portfolioCache: { data: BCSPortfolioItem[]; timestamp: number } | null = null;
 const CACHE_TTL = 30000; // 30 seconds
 
 export type ClientId = 'trade-api-read' | 'trade-api-write';
@@ -103,33 +155,73 @@ export async function refreshAccessToken(clientId: ClientId = 'trade-api-read'):
   return cachedTokens;
 }
 
-export async function getAccounts(): Promise<BCSAccount[]> {
-  const tokens = await ensureValidToken();
-  const response = await fetch(`${BCS_API_BASE}/accounts`, {
-    headers: { Authorization: `Bearer ${tokens.accessToken}` },
-  });
-  if (!response.ok) throw new Error('Failed to fetch accounts');
-  return response.json();
-}
-
-export async function getPortfolio(accountId: string, forceRefresh = false): Promise<Portfolio> {
+export async function getPortfolio(forceRefresh = false): Promise<BCSPortfolioItem[]> {
   if (!forceRefresh && portfolioCache && Date.now() - portfolioCache.timestamp < CACHE_TTL) {
     return portfolioCache.data;
   }
   const tokens = await ensureValidToken();
-  const response = await fetch(`${BCS_API_BASE}/accounts/${accountId}/portfolio`, {
+  const response = await fetch(BCS_PORTFOLIO_URL, {
     headers: { Authorization: `Bearer ${tokens.accessToken}` },
   });
-  if (!response.ok) throw new Error('Failed to fetch portfolio');
-  const data = await response.json();
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.type || 'Failed to fetch portfolio');
+  }
+  const data: BCSPortfolioItem[] = await response.json();
   portfolioCache = { data, timestamp: Date.now() };
   return data;
 }
 
-async function ensureValidToken(): Promise<BCSTokens> {
+export async function createOrder(request: CreateOrderRequest): Promise<CreateOrderResponse> {
+  const tokens = await ensureValidToken('trade-api-write');
+  const response = await fetch(BCS_ORDERS_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${tokens.accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.errors?.[0]?.type || errorData.type || 'Failed to create order');
+  }
+  return response.json();
+}
+
+export async function getOrderStatus(originalClientOrderId: string): Promise<OrderStatusResponse> {
+  const tokens = await ensureValidToken();
+  const response = await fetch(`${BCS_ORDERS_URL}/${originalClientOrderId}`, {
+    headers: { Authorization: `Bearer ${tokens.accessToken}` },
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.type || 'Failed to get order status');
+  }
+  return response.json();
+}
+
+export async function cancelOrder(originalClientOrderId: string, clientOrderId: string): Promise<CreateOrderResponse> {
+  const tokens = await ensureValidToken('trade-api-write');
+  const response = await fetch(`${BCS_ORDERS_URL}/${originalClientOrderId}/cancel`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${tokens.accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ clientOrderId }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.type || 'Failed to cancel order');
+  }
+  return response.json();
+}
+
+async function ensureValidToken(clientId: ClientId = 'trade-api-read'): Promise<BCSTokens> {
   if (!cachedTokens) throw new Error('Not authenticated');
   if (Date.now() >= cachedTokens.expiresAt - 60000) {
-    return refreshAccessToken();
+    return refreshAccessToken(clientId);
   }
   return cachedTokens;
 }
