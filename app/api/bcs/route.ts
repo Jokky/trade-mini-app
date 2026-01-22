@@ -25,24 +25,32 @@ export async function POST(request: NextRequest) {
         });
       }
       case 'portfolio': {
+        // Ensure tokens are set before fetching portfolio
+        if (!params.refreshToken) {
+          return NextResponse.json({ success: false, error: 'Refresh token is required' }, { status: 401 });
+        }
+        const clientId = params.clientId || 'trade-api-read';
+        await bcsClient.authenticate(params.refreshToken, clientId);
         const portfolio = await bcsClient.getPortfolio(params.forceRefresh);
         return NextResponse.json({ success: true, data: portfolio });
       }
       case 'refresh': {
         const clientId = params.clientId || 'trade-api-write';
+        if (!params.refreshToken) {
+          return NextResponse.json({ success: false, error: 'Refresh token is required' }, { status: 401 });
+        }
+        await bcsClient.authenticate(params.refreshToken, clientId);
         await bcsClient.refreshAccessToken(clientId);
         return NextResponse.json({ success: true });
       }
       case 'createOrder': {
-        // Валидация: для лимитных заявок (orderType === '2') цена обязательна
-        if (params.orderType === '2' && (!params.price || params.price <= 0)) {
-          return NextResponse.json(
-            { success: false, error: 'Для лимитной заявки необходимо указать цену' },
-            { status: 400 }
-          );
+        // Ensure tokens are set before creating order
+        if (!params.refreshToken) {
+          return NextResponse.json({ success: false, error: 'Refresh token is required' }, { status: 401 });
         }
-
-        const orderRequest: bcsClient.CreateOrderRequest = {
+        const clientId = params.clientId || 'trade-api-write';
+        await bcsClient.authenticate(params.refreshToken, clientId);
+        const response = await bcsClient.createOrder({
           clientOrderId: params.clientOrderId,
           side: params.side,
           orderType: params.orderType,
@@ -60,10 +68,22 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, data: response });
       }
       case 'orderStatus': {
+        // Ensure tokens are set before getting order status
+        if (!params.refreshToken) {
+          return NextResponse.json({ success: false, error: 'Refresh token is required' }, { status: 401 });
+        }
+        const clientId = params.clientId || 'trade-api-read';
+        await bcsClient.authenticate(params.refreshToken, clientId);
         const response = await bcsClient.getOrderStatus(params.originalClientOrderId);
         return NextResponse.json({ success: true, data: response });
       }
       case 'cancelOrder': {
+        // Ensure tokens are set before canceling order
+        if (!params.refreshToken) {
+          return NextResponse.json({ success: false, error: 'Refresh token is required' }, { status: 401 });
+        }
+        const clientId = params.clientId || 'trade-api-write';
+        await bcsClient.authenticate(params.refreshToken, clientId);
         const response = await bcsClient.cancelOrder(params.originalClientOrderId, params.clientOrderId);
         return NextResponse.json({ success: true, data: response });
       }
