@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { getToken, saveToken, removeToken } from '../services/authStorage';
 import Portfolio from './Portfolio';
-import { Button, Placeholder, Textarea, Banner, Cell } from '@telegram-apps/telegram-ui';
+import { Button, Placeholder, Textarea, Cell } from '@telegram-apps/telegram-ui';
 
 /**
  * Minimal AuthGate component
@@ -123,9 +123,16 @@ const AddTokenForm: React.FC<{ storageError: string | null; onSaved: () => void 
           Введите ваш refresh-токен из веб-версии БКС Мир инвестиций
         </p>
         {storageError && (
-          <Banner type="error" style={{ marginBottom: '16px' }}>
+          <div style={{
+            padding: '12px',
+            marginBottom: '16px',
+            backgroundColor: 'var(--tgui--destructive_bg_color)',
+            color: 'var(--tgui--destructive_text_color)',
+            borderRadius: '8px',
+            fontSize: '14px'
+          }}>
             Ошибка хранилища: {storageError}
-          </Banner>
+          </div>
         )}
         <Textarea
           value={token}
@@ -142,9 +149,16 @@ const AddTokenForm: React.FC<{ storageError: string | null; onSaved: () => void 
           {saving ? 'Проверка...' : 'Войти'}
         </Button>
         {error && (
-          <Banner type="error" style={{ marginTop: '16px' }}>
+          <div style={{
+            padding: '12px',
+            marginTop: '16px',
+            backgroundColor: 'var(--tgui--destructive_bg_color)',
+            color: 'var(--tgui--destructive_text_color)',
+            borderRadius: '8px',
+            fontSize: '14px'
+          }}>
             {error}
-          </Banner>
+          </div>
         )}
       </div>
     </div>

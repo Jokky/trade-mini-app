@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import OrderForm from './OrderForm';
 import { usePortfolioWebSocket } from '../hooks/usePortfolioWebSocket';
 import { BCSPortfolioPosition } from '../services/websocket/types';
-import { Cell, Placeholder, Banner } from '@telegram-apps/telegram-ui';
+import { Cell, Placeholder } from '@telegram-apps/telegram-ui';
 
 interface SelectedInstrument {
   ticker: string;
@@ -60,9 +60,16 @@ export default function Portfolio() {
   if (error) {
     return (
       <div>
-        <Banner type="error" style={{ margin: '16px' }}>
+        <div style={{
+          padding: '12px',
+          margin: '16px',
+          backgroundColor: 'var(--tgui--destructive_bg_color)',
+          color: 'var(--tgui--destructive_text_color)',
+          borderRadius: '8px',
+          fontSize: '14px'
+        }}>
           {error}
-        </Banner>
+        </div>
       </div>
     );
   }
@@ -75,14 +82,29 @@ export default function Portfolio() {
   return (
     <div>
       {connectionState === 'error' && (
-        <Banner type="error" style={{ margin: '16px' }}>
+        <div style={{
+          padding: '12px',
+          margin: '16px',
+          backgroundColor: 'var(--tgui--destructive_bg_color)',
+          color: 'var(--tgui--destructive_text_color)',
+          borderRadius: '8px',
+          fontSize: '14px'
+        }}>
           Ошибка подключения к серверу
-        </Banner>
+        </div>
       )}
       {connectionState === 'connecting' && positions.length > 0 && (
-        <Banner type="warn" style={{ margin: '16px' }}>
+        <div style={{
+          padding: '12px',
+          margin: '16px',
+          backgroundColor: 'var(--tgui--hint_color)',
+          color: 'var(--tgui--text_color)',
+          borderRadius: '8px',
+          fontSize: '14px',
+          opacity: 0.7
+        }}>
           Переподключение...
-        </Banner>
+        </div>
       )}
       {positions.length === 0 ? (
         <Placeholder header="Портфель пуст" />
