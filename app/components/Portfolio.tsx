@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import OrderForm from './OrderForm';
-import { usePortfolioWebSocket } from '../hooks/usePortfolioWebSocket';
-import { BCSPortfolioPosition } from '../services/websocket/types';
+import { usePortfolioPolling } from '../hooks/usePortfolioPolling';
+import { BCSPortfolioItem } from '../lib/bcs-api/client';
 
 interface SelectedInstrument {
   ticker: string;
@@ -12,43 +12,19 @@ interface SelectedInstrument {
 }
 
 export default function Portfolio() {
-  const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [selectedInstrument, setSelectedInstrument] = useState<SelectedInstrument | null>(null);
 
-  // Fetch access token on mount
-  useEffect(() => {
-    const fetchAccessToken = async () => {
-      try {
-        const res = await fetch('/api/bcs', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'getAccessToken' }),
-        });
-        const data = await res.json();
-        if (data.success) {
-          setAccessToken(data.accessToken);
-        } else {
-          setError(data.error || 'Ошибка получения токена');
-        }
-      } catch {
-        setError('Ошибка получения токена');
-      }
-    };
-    fetchAccessToken();
-  }, []);
-
-  // Connect to WebSocket
-  const { positions: allPositions, connectionState } = usePortfolioWebSocket(accessToken || '');
+  // Poll portfolio data via HTTP every 5 seconds
+  const { positions: allPositions, isLoading, error } = usePortfolioPolling();
 
   // Filter only depoLimit positions with term T365
   const positions = useMemo(() => {
     return allPositions.filter(
-      (item: BCSPortfolioPosition) => item.type === 'depoLimit' && item.quantity > 0 && item.term === 'T365'
+      (item: BCSPortfolioItem) => item.type === 'depoLimit' && item.quantity > 0 && item.term === 'T365'
     );
   }, [allPositions]);
 
-  const handlePositionClick = (pos: BCSPortfolioPosition) => {
+  const handlePositionClick = (pos: BCSPortfolioItem) => {
     setSelectedInstrument({
       ticker: pos.ticker,
       classCode: pos.board,
@@ -58,21 +34,10 @@ export default function Portfolio() {
 
   if (error) return <div className="p-4 text-red-500">{error}</div>;
 
-  const isLoading = !accessToken || (connectionState === 'connecting' && positions.length === 0);
   if (isLoading) return <div className="p-4">Загрузка...</div>;
 
   return (
     <div className="p-4">
-      {connectionState === 'error' && (
-        <div className="mb-2 p-2 bg-red-100 text-red-600 rounded text-sm">
-          Ошибка подключения к серверу
-        </div>
-      )}
-      {connectionState === 'connecting' && positions.length > 0 && (
-        <div className="mb-2 p-2 bg-yellow-100 text-yellow-700 rounded text-sm">
-          Переподключение...
-        </div>
-      )}
       <div className="space-y-2">
         {positions.map((pos) => (
           <div
