@@ -93,14 +93,14 @@ export default function OrderForm({
         </Cell>
         <div style={{ display: 'flex', gap: '8px', marginTop: '16px', marginBottom: '16px' }}>
           <Button
-            mode={orderType === 'market' ? 'primary' : 'secondary'}
+            mode={orderType === 'market' ? 'filled' : 'outline'}
             onClick={() => setOrderType('market')}
             style={{ flex: 1 }}
           >
             Рыночная
           </Button>
           <Button
-            mode={orderType === 'limit' ? 'primary' : 'secondary'}
+            mode={orderType === 'limit' ? 'filled' : 'outline'}
             onClick={() => setOrderType('limit')}
             style={{ flex: 1 }}
           >
@@ -129,7 +129,7 @@ export default function OrderForm({
           <Button
             onClick={() => handleSubmit('buy')}
             disabled={!isValid || isLoading}
-            mode="primary"
+            mode="filled"
             style={{ flex: 1, backgroundColor: 'var(--tgui--button_positive_bg_color)' }}
           >
             {isLoading ? <Spinner size="s" /> : 'Купить'}
@@ -137,7 +137,7 @@ export default function OrderForm({
           <Button
             onClick={() => handleSubmit('sell')}
             disabled={!isValid || isLoading}
-            mode="primary"
+            mode="filled"
             style={{ flex: 1, backgroundColor: 'var(--tgui--destructive_text_color)' }}
           >
             {isLoading ? <Spinner size="s" /> : 'Продать'}
