@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { getToken, saveToken, removeToken } from '../services/authStorage';
 import Portfolio from './Portfolio';
-import { Panel, PanelHeader, Button, Spinner, Placeholder, Textarea, Banner } from '@telegram-apps/telegram-ui';
+import { Button, Placeholder, Textarea, Banner, Cell } from '@telegram-apps/telegram-ui';
 
 /**
  * Minimal AuthGate component
@@ -39,17 +39,13 @@ export const AuthGate: React.FC = () => {
   }, []);
 
   if (loading) {
-    return (
-      <Panel>
-        <Placeholder header="Загрузка..." />
-      </Panel>
-    );
+    return <Placeholder header="Загрузка..." />;
   }
 
   if (showPortfolio) {
     return (
-      <Panel>
-        <PanelHeader
+      <div>
+        <Cell
           before={<div />}
           after={
             <Button
@@ -68,9 +64,9 @@ export const AuthGate: React.FC = () => {
           }
         >
           Портфель
-        </PanelHeader>
+        </Cell>
         <Portfolio />
-      </Panel>
+      </div>
     );
   }
 
@@ -120,8 +116,8 @@ const AddTokenForm: React.FC<{ storageError: string | null; onSaved: () => void 
   };
 
   return (
-    <Panel>
-      <PanelHeader>Добавить токен</PanelHeader>
+    <div>
+      <Cell>Добавить токен</Cell>
       <div style={{ padding: '16px' }}>
         <p style={{ marginBottom: '16px', color: 'var(--tgui--hint_color)', textAlign: 'center' }}>
           Введите ваш refresh-токен из веб-версии БКС Мир инвестиций
@@ -151,7 +147,7 @@ const AddTokenForm: React.FC<{ storageError: string | null; onSaved: () => void 
           </Banner>
         )}
       </div>
-    </Panel>
+    </div>
   );
 };
 

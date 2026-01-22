@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import OrderForm from './OrderForm';
 import { usePortfolioWebSocket } from '../hooks/usePortfolioWebSocket';
 import { BCSPortfolioPosition } from '../services/websocket/types';
-import { Panel, Cell, Placeholder, Banner } from '@telegram-apps/telegram-ui';
+import { Cell, Placeholder, Banner } from '@telegram-apps/telegram-ui';
 
 interface SelectedInstrument {
   ticker: string;
@@ -59,25 +59,21 @@ export default function Portfolio() {
 
   if (error) {
     return (
-      <Panel>
+      <div>
         <Banner type="error" style={{ margin: '16px' }}>
           {error}
         </Banner>
-      </Panel>
+      </div>
     );
   }
 
   const isLoading = !accessToken || (connectionState === 'connecting' && positions.length === 0);
   if (isLoading) {
-    return (
-      <Panel>
-        <Placeholder header="Загрузка..." />
-      </Panel>
-    );
+    return <Placeholder header="Загрузка..." />;
   }
 
   return (
-    <Panel>
+    <div>
       {connectionState === 'error' && (
         <Banner type="error" style={{ margin: '16px' }}>
           Ошибка подключения к серверу
@@ -131,6 +127,6 @@ export default function Portfolio() {
           onError={(err) => console.error('Order error:', err)}
         />
       )}
-    </Panel>
+    </div>
   );
 }

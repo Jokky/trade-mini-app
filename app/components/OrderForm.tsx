@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { createOrder, CreateOrderResponse } from '../services/orderApi';
-import { Modal, Button, Input, Tabs, Cell, Spinner } from '@telegram-apps/telegram-ui';
+import { Modal, Button, Input, Cell, Spinner } from '@telegram-apps/telegram-ui';
 
 export interface OrderFormProps {
   ticker: string;
@@ -91,21 +91,21 @@ export default function OrderForm({
         >
           {instrumentName}
         </Cell>
-        <div style={{ marginTop: '16px', marginBottom: '16px' }}>
-          <Tabs>
-            <Tabs.Item
-              selected={orderType === 'market'}
-              onClick={() => setOrderType('market')}
-            >
-              Рыночная
-            </Tabs.Item>
-            <Tabs.Item
-              selected={orderType === 'limit'}
-              onClick={() => setOrderType('limit')}
-            >
-              Лимитная
-            </Tabs.Item>
-          </Tabs>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '16px', marginBottom: '16px' }}>
+          <Button
+            mode={orderType === 'market' ? 'primary' : 'secondary'}
+            onClick={() => setOrderType('market')}
+            style={{ flex: 1 }}
+          >
+            Рыночная
+          </Button>
+          <Button
+            mode={orderType === 'limit' ? 'primary' : 'secondary'}
+            onClick={() => setOrderType('limit')}
+            style={{ flex: 1 }}
+          >
+            Лимитная
+          </Button>
         </div>
         <Input
           type="number"
