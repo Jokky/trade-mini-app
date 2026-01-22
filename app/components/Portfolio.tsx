@@ -1,22 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import OrderForm from './OrderForm';
-
-interface BCSPortfolioItem {
-  type: string;
-  account: string;
-  ticker: string;
-  displayName: string;
-  currency: string;
-  quantity: number;
-  currentPrice: number;
-  currentValue: number;
-  currentValueRub: number;
-  unrealizedPL: number;
-  unrealizedPercentPL: number;
-  board: string;
-}
+import { usePortfolioWebSocket } from '../hooks/usePortfolioWebSocket';
+import { BCSPortfolioPosition } from '../services/websocket/types';
 
 interface SelectedInstrument {
   ticker: string;
@@ -25,41 +12,43 @@ interface SelectedInstrument {
 }
 
 export default function Portfolio() {
-  const [positions, setPositions] = useState<BCSPortfolioItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedInstrument, setSelectedInstrument] = useState<SelectedInstrument | null>(null);
 
-  const fetchPortfolio = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/bcs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'portfolio' }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        // Filter only depoLimit positions (stocks, bonds, etc.)
-        const depoPositions = (data.data || []).filter(
-          (item: BCSPortfolioItem) => item.type === 'depoLimit' && item.quantity > 0
-        );
-        setPositions(depoPositions);
-      } else {
-        setError(data.error || 'Ошибка загрузки портфеля');
+  // Fetch access token on mount
+  useEffect(() => {
+    const fetchAccessToken = async () => {
+      try {
+        const res = await fetch('/api/bcs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'getAccessToken' }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          setAccessToken(data.accessToken);
+        } else {
+          setError(data.error || 'Ошибка получения токена');
+        }
+      } catch {
+        setError('Ошибка получения токена');
       }
-    } catch (e) {
-      setError('Ошибка загрузки портфеля');
-    } finally {
-      setLoading(false);
-    }
+    };
+    fetchAccessToken();
   }, []);
 
-  useEffect(() => {
-    fetchPortfolio();
-  }, [fetchPortfolio]);
+  // Connect to WebSocket
+  const { positions: allPositions, connectionState } = usePortfolioWebSocket(accessToken || '');
 
-  const handlePositionClick = (pos: BCSPortfolioItem) => {
+  // Filter only depoLimit positions with term T365
+  const positions = useMemo(() => {
+    return allPositions.filter(
+      (item: BCSPortfolioPosition) => item.type === 'depoLimit' && item.quantity > 0 && item.term === 'T365'
+    );
+  }, [allPositions]);
+
+  const handlePositionClick = (pos: BCSPortfolioPosition) => {
     setSelectedInstrument({
       ticker: pos.ticker,
       classCode: pos.board,
@@ -68,10 +57,22 @@ export default function Portfolio() {
   };
 
   if (error) return <div className="p-4 text-red-500">{error}</div>;
-  if (loading) return <div className="p-4">Загрузка...</div>;
+
+  const isLoading = !accessToken || (connectionState === 'connecting' && positions.length === 0);
+  if (isLoading) return <div className="p-4">Загрузка...</div>;
 
   return (
     <div className="p-4">
+      {connectionState === 'error' && (
+        <div className="mb-2 p-2 bg-red-100 text-red-600 rounded text-sm">
+          Ошибка подключения к серверу
+        </div>
+      )}
+      {connectionState === 'connecting' && positions.length > 0 && (
+        <div className="mb-2 p-2 bg-yellow-100 text-yellow-700 rounded text-sm">
+          Переподключение...
+        </div>
+      )}
       <div className="space-y-2">
         {positions.map((pos) => (
           <div
@@ -109,10 +110,7 @@ export default function Portfolio() {
           classCode={selectedInstrument.classCode}
           instrumentName={selectedInstrument.name}
           onClose={() => setSelectedInstrument(null)}
-          onSuccess={() => {
-            setSelectedInstrument(null);
-            fetchPortfolio();
-          }}
+          onSuccess={() => setSelectedInstrument(null)}
           onError={(err) => console.error('Order error:', err)}
         />
       )}

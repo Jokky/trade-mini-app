@@ -1,16 +1,19 @@
 /**
  * WebSocket service for BCS Trading API Portfolio
  * Handles connection lifecycle, reconnection, and message parsing
+ *
+ * API sends portfolio data as a direct array of BCSPortfolioPosition[]
+ * No explicit subscription message required - data flows immediately after connection
  */
 
-import { WebSocketConnectionState, WebSocketMessage, PortfolioData, PortfolioWebSocketConfig } from './types';
+import { WebSocketConnectionState, BCSPortfolioPosition, PortfolioWebSocketConfig } from './types';
 
 export class PortfolioWebSocketService {
   private ws: WebSocket | null = null;
   private state: WebSocketConnectionState = 'disconnected';
   private reconnectAttempts = 0;
   private config: PortfolioWebSocketConfig;
-  private onDataCallback?: (data: PortfolioData) => void;
+  private onDataCallback?: (data: BCSPortfolioPosition[]) => void;
   private onStateChangeCallback?: (state: WebSocketConnectionState) => void;
 
   constructor(config: PortfolioWebSocketConfig) {
@@ -19,14 +22,19 @@ export class PortfolioWebSocketService {
 
   connect(): void {
     if (this.ws?.readyState === WebSocket.OPEN) return;
-    
+
     this.setState('connecting');
-    this.ws = new WebSocket(`${this.config.url}?token=${this.config.token}`);
-    
+
+    // BCS WebSocket requires token in URL (browser WebSocket doesn't support custom headers)
+    const url = new URL(this.config.url);
+    url.searchParams.set('token', this.config.token);
+
+    this.ws = new WebSocket(url.toString());
+
     this.ws.onopen = () => {
       this.setState('connected');
       this.reconnectAttempts = 0;
-      this.subscribe();
+      // No subscription message needed - server sends data automatically
     };
 
     this.ws.onmessage = (event) => this.handleMessage(event);
@@ -41,7 +49,7 @@ export class PortfolioWebSocketService {
     this.setState('disconnected');
   }
 
-  onData(callback: (data: PortfolioData) => void): void {
+  onData(callback: (data: BCSPortfolioPosition[]) => void): void {
     this.onDataCallback = callback;
   }
 
@@ -49,17 +57,14 @@ export class PortfolioWebSocketService {
     this.onStateChangeCallback = callback;
   }
 
-  private subscribe(): void {
-    this.ws?.send(JSON.stringify({ action: 'subscribe', channel: 'portfolio' }));
-  }
-
   private handleMessage(event: MessageEvent): void {
     try {
-      const message: WebSocketMessage = JSON.parse(event.data);
-      if (message.type === 'portfolio' && message.payload) {
-        this.onDataCallback?.(message.payload as PortfolioData);
+      const data = JSON.parse(event.data);
+
+      // BCS API sends portfolio as a direct array of positions
+      if (Array.isArray(data)) {
+        this.onDataCallback?.(data as BCSPortfolioPosition[]);
       }
-      // TODO: Handle heartbeat responses
     } catch (e) {
       console.error('Failed to parse WebSocket message:', e);
     }
