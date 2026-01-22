@@ -15,6 +15,15 @@ export async function POST(request: NextRequest) {
           refreshExpiresAt: tokens.refreshExpiresAt,
         });
       }
+      case 'getAccessToken': {
+        const clientId = params.clientId || 'trade-api-write';
+        const tokens = await bcsClient.getAccessToken(clientId);
+        return NextResponse.json({
+          success: true,
+          accessToken: tokens.accessToken,
+          expiresAt: tokens.expiresAt,
+        });
+      }
       case 'portfolio': {
         const portfolio = await bcsClient.getPortfolio(params.forceRefresh);
         return NextResponse.json({ success: true, data: portfolio });

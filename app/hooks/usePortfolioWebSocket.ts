@@ -5,18 +5,18 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PortfolioWebSocketService } from '../services/websocket/portfolioWebSocket';
-import { PortfolioData, WebSocketConnectionState } from '../services/websocket/types';
+import { BCSPortfolioPosition, WebSocketConnectionState } from '../services/websocket/types';
 
-const WS_URL = process.env.NEXT_PUBLIC_BCS_WS_URL || 'wss://trade-api.bcs.ru/ws/portfolio';
+const WS_URL = process.env.NEXT_PUBLIC_BCS_WS_PORTFOLIO_URL || 'wss://ws.broker.ru/trade-api-bff-portfolio/api/v1/portfolio/ws';
 
 interface UsePortfolioWebSocketResult {
-  portfolio: PortfolioData | null;
+  positions: BCSPortfolioPosition[];
   connectionState: WebSocketConnectionState;
   reconnect: () => void;
 }
 
 export function usePortfolioWebSocket(token: string): UsePortfolioWebSocketResult {
-  const [portfolio, setPortfolio] = useState<PortfolioData | null>(null);
+  const [positions, setPositions] = useState<BCSPortfolioPosition[]>([]);
   const [connectionState, setConnectionState] = useState<WebSocketConnectionState>('disconnected');
   const serviceRef = useRef<PortfolioWebSocketService | null>(null);
 
@@ -26,7 +26,7 @@ export function usePortfolioWebSocket(token: string): UsePortfolioWebSocketResul
     const service = new PortfolioWebSocketService({ url: WS_URL, token });
     serviceRef.current = service;
 
-    service.onData(setPortfolio);
+    service.onData(setPositions);
     service.onStateChange(setConnectionState);
     service.connect();
 
@@ -49,5 +49,5 @@ export function usePortfolioWebSocket(token: string): UsePortfolioWebSocketResul
     serviceRef.current?.connect();
   }, []);
 
-  return { portfolio, connectionState, reconnect };
+  return { positions, connectionState, reconnect };
 }

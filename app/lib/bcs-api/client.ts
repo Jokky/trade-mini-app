@@ -226,6 +226,10 @@ async function ensureValidToken(clientId: ClientId = 'trade-api-write'): Promise
   return cachedTokens;
 }
 
+export async function getAccessToken(clientId: ClientId = 'trade-api-write'): Promise<BCSTokens> {
+  return ensureValidToken(clientId);
+}
+
 export function setTokens(tokens: BCSTokens): void {
   cachedTokens = tokens;
 }
