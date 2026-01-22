@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { createOrder, CreateOrderResponse } from '../services/orderApi';
+import { Modal, Button, Input, Cell, Spinner } from '@telegram-apps/telegram-ui';
 
 export interface OrderFormProps {
   ticker: string;
@@ -57,85 +58,92 @@ export default function OrderForm({
 
   if (result) {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-xl p-6 w-full max-w-md text-center">
-          <div className={`text-4xl mb-4 ${result.success ? 'text-green-500' : 'text-red-500'}`}>
+      <Modal open={true}>
+        <div style={{ padding: '24px', textAlign: 'center' }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px', color: result.success ? 'var(--tgui--link_color)' : 'var(--tgui--destructive_text_color)' }}>
             {result.success ? '✓' : '✗'}
           </div>
-          <h2 className="text-xl font-bold mb-2">{result.success ? 'Успешно' : 'Ошибка'}</h2>
-          <p className="text-gray-600 mb-6">{result.message}</p>
-          <button
-            onClick={onClose}
-            className="w-full py-3 bg-blue-500 text-white rounded-lg font-medium"
-          >
+          <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '8px' }}>
+            {result.success ? 'Успешно' : 'Ошибка'}
+          </h2>
+          <p style={{ marginBottom: '24px', color: 'var(--tgui--hint_color)' }}>
+            {result.message}
+          </p>
+          <Button onClick={onClose} size="l" stretched>
             Вернуться в портфель
-          </button>
+          </Button>
         </div>
-      </div>
+      </Modal>
     );
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl p-6 w-full max-w-md">
-        <div className="flex justify-between items-center mb-4">
-          <div>
-            <h2 className="text-xl font-bold">{instrumentName}</h2>
-            <span className="text-gray-500">{ticker}</span>
-          </div>
-          <button onClick={onClose} className="text-gray-400 text-2xl">
-            ×
-          </button>
+    <Modal open={true}>
+      <div style={{ padding: '16px' }}>
+        <Cell
+          before={<div />}
+          after={
+            <Button mode="plain" onClick={onClose}>
+              ×
+            </Button>
+          }
+          subtitle={ticker}
+        >
+          {instrumentName}
+        </Cell>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '16px', marginBottom: '16px' }}>
+          <Button
+            mode={orderType === 'market' ? 'filled' : 'outline'}
+            onClick={() => setOrderType('market')}
+            style={{ flex: 1 }}
+          >
+            Рыночная
+          </Button>
+          <Button
+            mode={orderType === 'limit' ? 'filled' : 'outline'}
+            onClick={() => setOrderType('limit')}
+            style={{ flex: 1 }}
+          >
+            Лимитная
+          </Button>
         </div>
-        <div className="flex gap-2 mb-4">
-          {(['market', 'limit'] as OrderType[]).map((type) => (
-            <button
-              key={type}
-              onClick={() => setOrderType(type)}
-              className={`flex-1 py-2 rounded-lg ${
-                orderType === type ? 'bg-blue-500 text-white' : 'bg-gray-100'
-              }`}
-            >
-              {type === 'market' ? 'Рыночная' : 'Лимитная'}
-            </button>
-          ))}
-        </div>
-        <input
+        <Input
           type="number"
           placeholder="Количество, шт."
           value={quantity}
           onChange={(e) => setQuantity(e.target.value)}
-          min="1"
-          className="w-full p-3 border rounded-lg mb-3"
+          style={{ marginBottom: '12px' }}
         />
         {orderType === 'limit' && (
-          <input
+          <Input
             type="number"
             placeholder="Цена"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
             step="0.01"
             min="0.01"
-            className="w-full p-3 border rounded-lg mb-3"
+            style={{ marginBottom: '12px' }}
           />
         )}
-        <div className="flex gap-3">
-          <button
+        <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+          <Button
             onClick={() => handleSubmit('buy')}
             disabled={!isValid || isLoading}
-            className="flex-1 py-3 bg-green-500 text-white rounded-lg font-medium disabled:opacity-50"
+            mode="filled"
+            style={{ flex: 1, backgroundColor: 'var(--tgui--button_positive_bg_color)' }}
           >
-            {isLoading ? '...' : 'Купить'}
-          </button>
-          <button
+            {isLoading ? <Spinner size="s" /> : 'Купить'}
+          </Button>
+          <Button
             onClick={() => handleSubmit('sell')}
             disabled={!isValid || isLoading}
-            className="flex-1 py-3 bg-red-500 text-white rounded-lg font-medium disabled:opacity-50"
+            mode="filled"
+            style={{ flex: 1, backgroundColor: 'var(--tgui--destructive_text_color)' }}
           >
-            {isLoading ? '...' : 'Продать'}
-          </button>
+            {isLoading ? <Spinner size="s" /> : 'Продать'}
+          </Button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

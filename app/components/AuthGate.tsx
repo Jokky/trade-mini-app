@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { getToken, saveToken, removeToken } from '../services/authStorage';
 import Portfolio from './Portfolio';
+import { Button, Placeholder, Textarea, Cell } from '@telegram-apps/telegram-ui';
 
 /**
  * Minimal AuthGate component
@@ -38,32 +39,32 @@ export const AuthGate: React.FC = () => {
   }, []);
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-gray-500">Загрузка...</div>
-      </div>
-    );
+    return <Placeholder header="Загрузка..." />;
   }
 
   if (showPortfolio) {
     return (
-      <div className="min-h-screen bg-gray-100">
-        <div className="bg-white shadow-sm p-4 flex justify-between items-center">
-          <h1 className="text-xl font-bold">Портфель</h1>
-          <button
-            onClick={async () => {
-              try {
-                await removeToken();
-                setShowPortfolio(false);
-              } catch (e) {
-                console.error('Logout failed', e);
-              }
-            }}
-            className="text-red-500 text-sm"
-          >
-            Выйти
-          </button>
-        </div>
+      <div>
+        <Cell
+          before={<div />}
+          after={
+            <Button
+              mode="plain"
+              onClick={async () => {
+                try {
+                  await removeToken();
+                  setShowPortfolio(false);
+                } catch (e) {
+                  console.error('Logout failed', e);
+                }
+              }}
+            >
+              Выйти
+            </Button>
+          }
+        >
+          Портфель
+        </Cell>
         <Portfolio />
       </div>
     );
@@ -115,33 +116,47 @@ const AddTokenForm: React.FC<{ storageError: string | null; onSaved: () => void 
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-lg">
-        <h2 className="text-2xl font-bold mb-2 text-center">Добавить токен</h2>
-        <p className="text-gray-500 text-center mb-6">
+    <div>
+      <Cell>Добавить токен</Cell>
+      <div style={{ padding: '16px' }}>
+        <p style={{ marginBottom: '16px', color: 'var(--tgui--hint_color)', textAlign: 'center' }}>
           Введите ваш refresh-токен из веб-версии БКС Мир инвестиций
         </p>
         {storageError && (
-          <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm">
+          <div style={{
+            padding: '12px',
+            marginBottom: '16px',
+            backgroundColor: 'var(--tgui--destructive_bg_color)',
+            color: 'var(--tgui--destructive_text_color)',
+            borderRadius: '8px',
+            fontSize: '14px'
+          }}>
             Ошибка хранилища: {storageError}
           </div>
         )}
-        <textarea
-          aria-label="refresh-token"
+        <Textarea
           value={token}
           onChange={(e) => setToken(e.target.value)}
           placeholder="Вставьте ваш refresh-токен"
-          className="w-full p-3 border rounded-lg mb-4 h-24 resize-none font-mono text-sm"
+          style={{ marginBottom: '16px', fontFamily: 'monospace', fontSize: '14px' }}
         />
-        <button
+        <Button
           onClick={handleSubmit}
           disabled={saving}
-          className="w-full py-3 bg-blue-500 text-white rounded-lg font-medium disabled:opacity-50"
+          size="l"
+          stretched
         >
           {saving ? 'Проверка...' : 'Войти'}
-        </button>
+        </Button>
         {error && (
-          <div className="bg-red-50 text-red-600 p-3 rounded-lg mt-4 text-sm">
+          <div style={{
+            padding: '12px',
+            marginTop: '16px',
+            backgroundColor: 'var(--tgui--destructive_bg_color)',
+            color: 'var(--tgui--destructive_text_color)',
+            borderRadius: '8px',
+            fontSize: '14px'
+          }}>
             {error}
           </div>
         )}
