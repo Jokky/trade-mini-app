@@ -46,19 +46,30 @@ function generateUUID(): string {
 export async function createOrder(request: CreateOrderRequest): Promise<CreateOrderResponse> {
   const clientOrderId = generateUUID();
 
+  // Валидация: для лимитных заявок цена обязательна
+  if (request.type === 'limit' && (!request.price || request.price <= 0)) {
+    throw new Error('Для лимитной заявки необходимо указать цену');
+  }
+
+  const body: any = {
+    action: 'createOrder',
+    clientOrderId,
+    side: request.side === 'buy' ? '1' : '2',
+    orderType: request.type === 'market' ? '1' : '2',
+    orderQuantity: request.quantity,
+    ticker: request.ticker,
+    classCode: request.classCode,
+  };
+
+  // Для лимитных заявок цена обязательна, для рыночных - не передаем
+  if (request.type === 'limit' && request.price) {
+    body.price = request.price;
+  }
+
   const response = await fetch('/api/bcs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      action: 'createOrder',
-      clientOrderId,
-      side: request.side === 'buy' ? '1' : '2',
-      orderType: request.type === 'market' ? '1' : '2',
-      orderQuantity: request.quantity,
-      ticker: request.ticker,
-      classCode: request.classCode,
-      price: request.price,
-    }),
+    body: JSON.stringify(body),
   });
 
   const data = await response.json();
