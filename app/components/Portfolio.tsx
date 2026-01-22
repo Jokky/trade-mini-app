@@ -50,6 +50,8 @@ export default function Portfolio() {
     );
   }
 
+  const isLoading = !accessToken || (connectionState === 'connecting' && positions.length === 0);
+
   if (isLoading) {
     return <Placeholder header="Загрузка..." />;
   }
