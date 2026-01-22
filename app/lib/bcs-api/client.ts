@@ -90,6 +90,7 @@ const BCS_AUTH_URL = 'https://be.broker.ru/trade-api-keycloak/realms/tradeapi/pr
 const BCS_PORTFOLIO_URL = 'https://be.broker.ru/trade-api-bff-portfolio/api/v1/portfolio';
 const BCS_ORDERS_URL = 'https://be.broker.ru/trade-api-bff-operations/api/v1/orders';
 const BCS_ORDERS_SEARCH_URL = 'https://be.broker.ru/trade-api-bff-order-details/api/v1/orders/search';
+const BCS_INFORMATION_URL = 'https://be.broker.ru/trade-api-information-service/api/v1/instruments';
 
 let cachedTokens: BCSTokens | null = null;
 let portfolioCache: { data: BCSPortfolioItem[]; timestamp: number } | null = null;
@@ -232,4 +233,75 @@ export async function getAccessToken(clientId: ClientId = 'trade-api-write'): Pr
 
 export function setTokens(tokens: BCSTokens): void {
   cachedTokens = tokens;
+}
+
+export type InstrumentType = 
+  | 'CURRENCY' 
+  | 'STOCK' 
+  | 'FOREIGN_STOCK' 
+  | 'BONDS' 
+  | 'NOTES' 
+  | 'DEPOSITARY_RECEIPTS' 
+  | 'EURO_BONDS' 
+  | 'MUTUAL_FUNDS' 
+  | 'ETF' 
+  | 'FUTURES' 
+  | 'OPTIONS' 
+  | 'GOODS' 
+  | 'INDICES';
+
+export interface BoardAndExchange {
+  classCode: string;
+  exchange: string;
+}
+
+export interface Instrument {
+  ticker: string;
+  boards: BoardAndExchange[];
+  shortName?: string;
+  displayName?: string;
+  type?: InstrumentType;
+  isin?: string;
+  registrationCode?: string;
+  issuerName?: string;
+  tradingCurrency?: string;
+  faceValue?: number;
+  scale?: number;
+  minimumStep?: number;
+  primaryBoard?: string;
+  secondaryBoards?: string[];
+  [key: string]: any; // для остальных полей
+}
+
+export interface GetInstrumentsParams {
+  type: InstrumentType;
+  baseAssetTicker?: string;
+  size?: number;
+  page?: number;
+}
+
+export async function getInstruments(params: GetInstrumentsParams): Promise<Instrument[]> {
+  const tokens = await ensureValidToken();
+  const { type, baseAssetTicker, size = 50, page = 0 } = params;
+  
+  const queryParams = new URLSearchParams({
+    type,
+    size: size.toString(),
+    page: page.toString(),
+  });
+  
+  if (baseAssetTicker) {
+    queryParams.append('baseAssetTicker', baseAssetTicker);
+  }
+  
+  const response = await fetch(`${BCS_INFORMATION_URL}/by-type?${queryParams.toString()}`, {
+    headers: { Authorization: `Bearer ${tokens.accessToken}` },
+  });
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.type || 'Failed to fetch instruments');
+  }
+  
+  return response.json();
 }

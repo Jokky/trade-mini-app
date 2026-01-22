@@ -53,6 +53,15 @@ export async function POST(request: NextRequest) {
         const response = await bcsClient.cancelOrder(params.originalClientOrderId, params.clientOrderId);
         return NextResponse.json({ success: true, data: response });
       }
+      case 'getInstruments': {
+        const instruments = await bcsClient.getInstruments({
+          type: params.type,
+          baseAssetTicker: params.baseAssetTicker,
+          size: params.size,
+          page: params.page,
+        });
+        return NextResponse.json({ success: true, data: instruments });
+      }
       default:
         return NextResponse.json({ success: false, error: 'Unknown action' }, { status: 400 });
     }
