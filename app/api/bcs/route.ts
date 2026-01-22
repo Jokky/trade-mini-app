@@ -7,8 +7,13 @@ export async function POST(request: NextRequest) {
 
     switch (action) {
       case 'authenticate': {
-        const tokens = await bcsClient.authenticate(params.username, params.password);
-        return NextResponse.json({ success: true, expiresAt: tokens.expiresAt });
+        const clientId = params.clientId || 'trade-api-read';
+        const tokens = await bcsClient.authenticate(params.refreshToken, clientId);
+        return NextResponse.json({
+          success: true,
+          expiresAt: tokens.expiresAt,
+          refreshExpiresAt: tokens.refreshExpiresAt,
+        });
       }
       case 'accounts': {
         const accounts = await bcsClient.getAccounts();
@@ -19,7 +24,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, portfolio });
       }
       case 'refresh': {
-        await bcsClient.refreshToken();
+        const clientId = params.clientId || 'trade-api-read';
+        await bcsClient.refreshAccessToken(clientId);
         return NextResponse.json({ success: true });
       }
       default:
@@ -27,7 +33,7 @@ export async function POST(request: NextRequest) {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    const status = message.includes('Authentication') ? 401 : 500;
+    const status = message.includes('Authentication') || message.includes('invalid_grant') ? 401 : 500;
     return NextResponse.json({ success: false, error: message }, { status });
   }
 }

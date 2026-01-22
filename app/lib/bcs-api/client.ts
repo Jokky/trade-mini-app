@@ -7,6 +7,7 @@ export interface BCSTokens {
   accessToken: string;
   refreshToken: string;
   expiresAt: number;
+  refreshExpiresAt: number;
 }
 
 export interface PortfolioPosition {
@@ -35,44 +36,69 @@ export interface BCSAccount {
   type: string;
 }
 
+const BCS_AUTH_URL = 'https://be.broker.ru/trade-api-keycloak/realms/tradeapi/protocol/openid-connect/token';
 const BCS_API_BASE = 'https://api.bcs.ru/trade/v1';
 
 let cachedTokens: BCSTokens | null = null;
 let portfolioCache: { data: Portfolio; timestamp: number } | null = null;
 const CACHE_TTL = 30000; // 30 seconds
 
-export async function authenticate(username: string, password: string): Promise<BCSTokens> {
-  // TODO: Implement actual OAuth2 flow with BCS API
-  // POST to authorization endpoint, handle response
-  const response = await fetch(`${BCS_API_BASE}/oauth/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password, grant_type: 'password' }),
+export type ClientId = 'trade-api-read' | 'trade-api-write';
+
+export async function authenticate(refreshToken: string, clientId: ClientId = 'trade-api-read'): Promise<BCSTokens> {
+  const body = new URLSearchParams({
+    client_id: clientId,
+    refresh_token: refreshToken,
+    grant_type: 'refresh_token',
   });
-  if (!response.ok) throw new Error('Authentication failed');
+
+  const response = await fetch(BCS_AUTH_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error_description || 'Authentication failed');
+  }
+
   const data = await response.json();
   cachedTokens = {
     accessToken: data.access_token,
     refreshToken: data.refresh_token,
     expiresAt: Date.now() + data.expires_in * 1000,
+    refreshExpiresAt: Date.now() + data.refresh_expires_in * 1000,
   };
   return cachedTokens;
 }
 
-export async function refreshToken(): Promise<BCSTokens> {
+export async function refreshAccessToken(clientId: ClientId = 'trade-api-read'): Promise<BCSTokens> {
   if (!cachedTokens?.refreshToken) throw new Error('No refresh token available');
-  // TODO: Implement token refresh logic
-  const response = await fetch(`${BCS_API_BASE}/oauth/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh_token: cachedTokens.refreshToken, grant_type: 'refresh_token' }),
+
+  const body = new URLSearchParams({
+    client_id: clientId,
+    refresh_token: cachedTokens.refreshToken,
+    grant_type: 'refresh_token',
   });
-  if (!response.ok) throw new Error('Token refresh failed');
+
+  const response = await fetch(BCS_AUTH_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error_description || 'Token refresh failed');
+  }
+
   const data = await response.json();
   cachedTokens = {
     accessToken: data.access_token,
     refreshToken: data.refresh_token,
     expiresAt: Date.now() + data.expires_in * 1000,
+    refreshExpiresAt: Date.now() + data.refresh_expires_in * 1000,
   };
   return cachedTokens;
 }
@@ -103,7 +129,7 @@ export async function getPortfolio(accountId: string, forceRefresh = false): Pro
 async function ensureValidToken(): Promise<BCSTokens> {
   if (!cachedTokens) throw new Error('Not authenticated');
   if (Date.now() >= cachedTokens.expiresAt - 60000) {
-    return refreshToken();
+    return refreshAccessToken();
   }
   return cachedTokens;
 }
