@@ -34,15 +34,29 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true });
       }
       case 'createOrder': {
-        const response = await bcsClient.createOrder({
+        // Валидация: для лимитных заявок (orderType === '2') цена обязательна
+        if (params.orderType === '2' && (!params.price || params.price <= 0)) {
+          return NextResponse.json(
+            { success: false, error: 'Для лимитной заявки необходимо указать цену' },
+            { status: 400 }
+          );
+        }
+
+        const orderRequest: bcsClient.CreateOrderRequest = {
           clientOrderId: params.clientOrderId,
           side: params.side,
           orderType: params.orderType,
           orderQuantity: params.orderQuantity,
           ticker: params.ticker,
           classCode: params.classCode,
-          price: params.price,
-        });
+        };
+
+        // Для лимитных заявок добавляем цену, для рыночных - не передаем
+        if (params.orderType === '2' && params.price) {
+          orderRequest.price = params.price;
+        }
+
+        const response = await bcsClient.createOrder(orderRequest);
         return NextResponse.json({ success: true, data: response });
       }
       case 'orderStatus': {

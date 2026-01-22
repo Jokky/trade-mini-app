@@ -174,14 +174,35 @@ export async function getPortfolio(forceRefresh = false): Promise<BCSPortfolioIt
 }
 
 export async function createOrder(request: CreateOrderRequest): Promise<CreateOrderResponse> {
+  // Валидация: для лимитных заявок (orderType === '2') цена обязательна
+  if (request.orderType === '2' && (!request.price || request.price <= 0)) {
+    throw new Error('Для лимитной заявки необходимо указать цену');
+  }
+
   const tokens = await ensureValidToken('trade-api-write');
+  
+  // Создаем объект запроса, исключая undefined поля
+  const requestBody: any = {
+    clientOrderId: request.clientOrderId,
+    side: request.side,
+    orderType: request.orderType,
+    orderQuantity: request.orderQuantity,
+    ticker: request.ticker,
+    classCode: request.classCode,
+  };
+
+  // Для лимитных заявок добавляем цену
+  if (request.orderType === '2' && request.price) {
+    requestBody.price = request.price;
+  }
+
   const response = await fetch(BCS_ORDERS_URL, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${tokens.accessToken}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(request),
+    body: JSON.stringify(requestBody),
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));

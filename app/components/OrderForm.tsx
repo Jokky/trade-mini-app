@@ -31,19 +31,25 @@ export default function OrderForm({
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const isValid =
-    quantity && parseInt(quantity) > 0 && (orderType === 'market' || (price && parseFloat(price) > 0));
+    quantity && parseInt(quantity) > 0 && (orderType === 'market' || (price && parseFloat(price) > 0 && !isNaN(parseFloat(price))));
 
   const handleSubmit = async (side: OrderSide) => {
     if (!isValid) return;
     setIsLoading(true);
     try {
+      const parsedPrice = orderType === 'limit' && price ? parseFloat(price) : undefined;
+      if (orderType === 'limit' && (!parsedPrice || isNaN(parsedPrice) || parsedPrice <= 0)) {
+        setResult({ success: false, message: 'Для лимитной заявки необходимо указать корректную цену' });
+        setIsLoading(false);
+        return;
+      }
       const response = await createOrder({
         ticker,
         classCode,
         side,
         type: orderType,
         quantity: parseInt(quantity),
-        price: orderType === 'limit' ? parseFloat(price) : undefined,
+        price: parsedPrice,
       });
       setResult({ success: true, message: `Заявка ${response.clientOrderId} успешно создана` });
       onSuccess?.(response);
