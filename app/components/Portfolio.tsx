@@ -17,10 +17,10 @@ export default function Portfolio() {
   // Poll portfolio data via HTTP every 5 seconds
   const { positions: allPositions, isLoading, error } = usePortfolioPolling();
 
-  // Filter only depoLimit positions with term T365
+  // Filter only positions with term T365
   const positions = useMemo(() => {
     return allPositions.filter(
-      (item: BCSPortfolioItem) => item.type === 'depoLimit' && item.quantity > 0 && item.term === 'T365'
+      (item: BCSPortfolioItem) => item.term === 'T365'
     );
   }, [allPositions]);
 
